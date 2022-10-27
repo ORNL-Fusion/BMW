@@ -108,6 +108,7 @@
 #if defined (MPI_OPT)
       CALL MPI_INITIALIZED(isinit, status)
 
+      bmw_parallel_context_construct%initialized_mpi = .false.
       IF (.not.isinit) THEN
          bmw_parallel_context_construct%initialized_mpi = .true.
          CALL MPI_INIT(status)
