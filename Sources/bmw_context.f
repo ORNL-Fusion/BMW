@@ -399,7 +399,7 @@
       CHARACTER (len=*), DIMENSION(3), PARAMETER  ::                           &
      &   up_dims = (/ 'r  ','z  ','phi' /)
       CHARACTER (len=*), DIMENSION(3), PARAMETER  ::                           &
-     &   p_dims = (/ 'u','v','s' /)
+     &   p_dims = (/ 's','u','v' /)
 
 !  Start of executable code
       start_time = profiler_get_start_time()
