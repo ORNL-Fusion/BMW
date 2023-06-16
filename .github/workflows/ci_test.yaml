@@ -54,7 +54,7 @@ jobs:
             - name: Build
               shell: bash
               working-directory: ${{runner.workspace}}/Stellarator-Tools/build
-              run: make VERBOSE=1
+              run: make -j VERBOSE=1
             - name: Test
               shell: bash
               working-directory: ${{runner.workspace}}/Stellarator-Tools/build
