@@ -76,12 +76,14 @@
 !>  @param[in] mgrid_file_name File name for vacuum fields.
 !>  @param[in] parallel        @ref bmw_parallel_context_class object instance.
 !>  @param[in] io_unit         Unit number to write messages to.
+!>  @param[in] vmec            The vmec file object.
 !>  @returns A pointer to a constructed @ref m_grid_class object.
 !-------------------------------------------------------------------------------
-      FUNCTION m_grid_construct(mgrid_file_name, parallel, io_unit)
+      FUNCTION m_grid_construct(mgrid_file_name, parallel, io_unit,            &
+     &                          vmec)
       USE ezcdf
-      USE read_wout_mod, Only: extcur
       USE bmw_parallel_context
+      USE vmec_file
 
       IMPLICIT NONE
 
@@ -90,6 +92,7 @@
       CHARACTER (len=*), INTENT(in)                  :: mgrid_file_name
       CLASS (bmw_parallel_context_class), INTENT(in) :: parallel
       INTEGER, INTENT(in)                            :: io_unit
+      CLASS (vmec_file_class), POINTER, INTENT(in)   :: vmec
 
 !  local variables
       REAL (rprec)                                   :: start_time
@@ -149,21 +152,21 @@
 
       ALLOCATE(temp_buffer(num_r, num_z, num_p))
 
-      DO i = 1 + parallel%offset, SIZE(extcur), parallel%stride
+      DO i = 1 + parallel%offset, SIZE(vmec%extcur), parallel%stride
          WRITE (temp_string, 1000) i
          CALL cdf_read(mgrid_ncid, temp_string, temp_buffer)
          m_grid_construct%a_r = m_grid_construct%a_r                           &
-     &                        + temp_buffer*extcur(i)
+     &                        + temp_buffer*vmec%extcur(i)
 
          WRITE (temp_string, 1001) i
          CALL cdf_read(mgrid_ncid, temp_string, temp_buffer)
          m_grid_construct%a_p = m_grid_construct%a_p                           &
-     &                        + temp_buffer*extcur(i)
+     &                        + temp_buffer*vmec%extcur(i)
 
          WRITE (temp_string, 1002) i
          CALL cdf_read(mgrid_ncid, temp_string, temp_buffer)
          m_grid_construct%a_z = m_grid_construct%a_z                           &
-     &                        + temp_buffer*extcur(i)
+     &                        + temp_buffer*vmec%extcur(i)
       END DO
 
       IF (parallel%stride .gt. 1) THEN
@@ -207,13 +210,14 @@
 !>  @param[in] zmin     Minimum vertical position.
 !>  @param[in] parallel @ref bmw_parallel_context_class object instance.
 !>  @param[in] io_unit  Unit number to write messages to.
+!>  @param[in] vmec     The vmec file object.
 !>  @returns A pointer to a constructed @ref m_grid_class object.
 !-------------------------------------------------------------------------------
       FUNCTION m_grid_construct_plasma(num_r, num_p, num_z,                    &
      &                                 rmax, rmin, zmax, zmin,                 &
-     &                                 parallel, io_unit)
-      USE read_wout_mod, Only: nfp
+     &                                 parallel, io_unit, vmec)
       USE bmw_parallel_context
+      USE vmec_file
 
       IMPLICIT NONE
 
@@ -228,6 +232,7 @@
       REAL (rprec), INTENT(in)                       :: zmin
       CLASS (bmw_parallel_context_class), INTENT(in) :: parallel
       INTEGER, INTENT(in)                            :: io_unit
+      CLASS (vmec_file_class), POINTER, INTENT(in)   :: vmec
 
 !  local variables
       REAL (rprec)                                   :: start_time
@@ -237,7 +242,7 @@
 
       ALLOCATE(m_grid_construct_plasma)
 
-      m_grid_construct_plasma%nfp = nfp
+      m_grid_construct_plasma%nfp = vmec%nfp
 
       m_grid_construct_plasma%rmax = rmax
       m_grid_construct_plasma%zmax = zmax
