@@ -13,6 +13,7 @@
       USE primed_grid
       USE unprimed_grid
       USE bmw_parallel_context
+      USE vmec_file
 
       IMPLICIT NONE
 
@@ -32,6 +33,8 @@
 !>  operate bmw.
 !-------------------------------------------------------------------------------
       TYPE :: bmw_context_class
+!>  VMEC equilibrium object.
+         CLASS (vmec_file_class), POINTER     :: vmec => null()
 !>  Vacuum grid object.
          CLASS (m_grid_class), POINTER        :: m_grid => null()
 !>  Primed grid object.
@@ -53,7 +56,8 @@
 !>  Interface for the bmw_context constructor.
 !-------------------------------------------------------------------------------
       INTERFACE bmw_context_class
-         MODULE PROCEDURE bmw_context_construct,                               &
+         MODULE PROCEDURE bmw_context_construct_no_vac,                        &
+     &                    bmw_context_construct,                               &
      &                    bmw_context_construct_plasma
       END INTERFACE
 
@@ -75,10 +79,55 @@
 !>  @param[in] io_unit          Unit number to write messages to.
 !>  @returns A pointer to a constructed @ref bmw_context_class object.
 !-------------------------------------------------------------------------------
-      FUNCTION bmw_context_construct(mgrid_file_name, wout_file_name,          &
-     &                               siesta_file_name, flags, num_p,           &
-     &                               parallel, io_unit)
-      USE read_wout_mod, Only: read_wout_file, extcur
+      FUNCTION bmw_context_construct_no_vac(mgrid_file_name,                   &
+     &                                      wout_file_name,                    &
+     &                                      siesta_file_name, flags,           &
+     &                                      num_p, parallel, io_unit)
+      IMPLICIT NONE
+
+!  Declare Arguments
+      CLASS (bmw_context_class), POINTER :: bmw_context_construct_no_vac
+      CHARACTER (len=*), INTENT(in)                  :: mgrid_file_name
+      CHARACTER (len=*), INTENT(in)                  :: wout_file_name
+      CHARACTER (len=*), INTENT(in)                  :: siesta_file_name
+      INTEGER, INTENT(in)                            :: flags
+      INTEGER, INTENT(inout)                         :: num_p
+      CLASS (bmw_parallel_context_class), INTENT(in) :: parallel
+      INTEGER, INTENT(in)                            :: io_unit
+
+!  local variables
+      REAL (rprec)                                   :: start_time
+
+!  Start of executable code
+      start_time = profiler_get_start_time()
+
+      bmw_context_construct_no_vac =>                                          &
+     &    bmw_context_construct(mgrid_file_name, wout_file_name, '',           &
+     &                          siesta_file_name, flags, num_p,                &
+     &                          parallel, io_unit)
+
+      CALL profiler_set_stop_time('bmw_context_construct_no_vac',              &
+     &                            start_time)
+
+      END FUNCTION
+!-------------------------------------------------------------------------------
+!>  @brief Construct a @ref bmw_context_class object.
+!>
+!>  Allocates memory and initializes a @ref bmw_context_class object.
+!>
+!>  @param[in] mgrid_file_name  Path and name of the mgrid file.
+!>  @param[in] wout_file_name   Path and name of the wout file.
+!>  @param[in] vmec_vac_file    Name of the zero beta vmec file.
+!>  @param[in] siesta_file_name Path and name of the siesta file.
+!>  @param[in] flags            Option flags.
+!>  @param[in] num_p            Number of phi planes per field period.
+!>  @param[in] parallel         @ref bmw_parallel_context_class object instance.
+!>  @param[in] io_unit          Unit number to write messages to.
+!>  @returns A pointer to a constructed @ref bmw_context_class object.
+!-------------------------------------------------------------------------------
+      FUNCTION bmw_context_construct(mgrid_file_name, vmec_vac_file,           &
+     &                               wout_file_name, siesta_file_name,         &
+     &                               flags, num_p, parallel, io_unit)
       USE bmw_state_flags, Only: bmw_state_flags_mgrid
 
       IMPLICIT NONE
@@ -87,6 +136,7 @@
       CLASS (bmw_context_class), POINTER :: bmw_context_construct
       CHARACTER (len=*), INTENT(in)                  :: mgrid_file_name
       CHARACTER (len=*), INTENT(in)                  :: wout_file_name
+      CHARACTER (len=*), INTENT(in)                  :: vmec_vac_file
       CHARACTER (len=*), INTENT(in)                  :: siesta_file_name
       INTEGER, INTENT(in)                            :: flags
       INTEGER, INTENT(inout)                         :: num_p
@@ -102,22 +152,12 @@
 
       ALLOCATE(bmw_context_construct)
 
-      CALL read_wout_file(wout_file_name, status)
-      IF (status .ne. 0) THEN
-         IF (parallel%offset .eq. 0) THEN
-            WRITE (io_unit,1000) TRIM(wout_file_name)
-         END IF
-         CALL bmw_parallel_context_abort(status)
-      END IF
-      IF (.not.ALLOCATED(extcur)) THEN
-         IF (parallel%offset .eq. 0) THEN
-            WRITE (io_unit,1001) TRIM(wout_file_name)
-         END IF
-         CALL bmw_parallel_context_abort(status)
-      END IF
+      bmw_context_construct%vmec =>                                            &
+     &   vmec_file_class(TRIM(wout_file_name))
 
       bmw_context_construct%m_grid =>                                          &
-     &   m_grid_class(mgrid_file_name, parallel, io_unit)
+     &   m_grid_class(mgrid_file_name, parallel, io_unit,                      &
+     &                bmw_context_construct%vmec)
 
       IF (BTEST(flags, bmw_state_flags_mgrid)) THEN
          num_p = SIZE(bmw_context_construct%m_grid%a_p, 3)
@@ -125,7 +165,9 @@
 
       bmw_context_construct%p_grid =>                                          &
      &   primed_grid_class(num_p*bmw_context_construct%m_grid%nfp,             &
-     &                     flags, siesta_file_name, parallel, io_unit)
+     &                     flags, bmw_context_construct%vmec,                  &
+     &                     vmec_vac_file, siesta_file_name, parallel,          &
+     &                     io_unit)
 
       CALL profiler_set_stop_time('bmw_context_construct', start_time)
 
@@ -141,6 +183,7 @@
 !>
 !>  @param[in] mgrid_file_name  Path and name of the mgrid file.
 !>  @param[in] wout_file_name   Path and name of the wout file.
+!>  @param[in] vmec_vac_file    Name of the zero beta vmec file.
 !>  @param[in] siesta_file_name Path and name of the siesta file.
 !>  @param[in] flags            Option flags.
 !>  @param[in] num_r            Number of radial points.
@@ -155,11 +198,11 @@
 !>  @returns A pointer to a constructed @ref bmw_context_class object.
 !-------------------------------------------------------------------------------
       FUNCTION bmw_context_construct_plasma(wout_file_name,                    &
+     &                                      vmec_vac_file,                     &
      &                                      siesta_file_name, flags,           &
      &                                      num_r, num_p, num_z,               &
      &                                      rmax, rmin, zmax, zmin,            &
      &                                      parallel, io_unit)
-      USE read_wout_mod, Only: read_wout_file, extcur
       USE bmw_state_flags, Only: bmw_state_flags_mgrid
 
       IMPLICIT NONE
@@ -167,6 +210,7 @@
 !  Declare Arguments
       CLASS (bmw_context_class), POINTER :: bmw_context_construct_plasma
       CHARACTER (len=*), INTENT(in)                  :: wout_file_name
+      CHARACTER (len=*), INTENT(in)                  :: vmec_vac_file
       CHARACTER (len=*), INTENT(in)                  :: siesta_file_name
       INTEGER, INTENT(in)                            :: flags
       INTEGER, INTENT(in)                            :: num_r
@@ -188,28 +232,19 @@
 
       ALLOCATE(bmw_context_construct_plasma)
 
-      CALL read_wout_file(wout_file_name, status)
-      IF (status .ne. 0) THEN
-         IF (parallel%offset .eq. 0) THEN
-            WRITE (io_unit,1000) TRIM(wout_file_name)
-         END IF
-         CALL bmw_parallel_context_abort(status)
-      END IF
-      IF (.not.ALLOCATED(extcur)) THEN
-         IF (parallel%offset .eq. 0) THEN
-            WRITE (io_unit,1001) TRIM(wout_file_name)
-         END IF
-         CALL bmw_parallel_context_abort(status)
-      END IF
+      bmw_context_construct_plasma%vmec =>                                     &
+     &   vmec_file_class(TRIM(wout_file_name))
 
       bmw_context_construct_plasma%m_grid =>                                   &
      &   m_grid_class(num_r, num_p, num_z, rmax, rmin, zmax, zmin,             &
-     &                parallel, io_unit)
+     &                parallel, io_unit,                                       &
+     &                bmw_context_construct_plasma%vmec)
 
       bmw_context_construct_plasma%p_grid =>                                   &
      &   primed_grid_class(                                                    &
      &      num_p*bmw_context_construct_plasma%m_grid%nfp,                     &
-     &      flags, siesta_file_name, parallel, io_unit)
+     &      flags, bmw_context_construct_plasma%vmec,                          &
+     &      vmec_vac_file, siesta_file_name, parallel, io_unit)
 
       CALL profiler_set_stop_time('bmw_context_construct_plasma',              &
      &                            start_time)
@@ -237,6 +272,11 @@
       TYPE (bmw_context_class), INTENT(inout) :: this
 
 !  Start of executable code
+      IF (ASSOCIATED(this%m_grid)) THEN
+         DEALLOCATE(this%vmec)
+         this%vmec => null()
+      END IF
+
       IF (ASSOCIATED(this%m_grid)) THEN
          DEALLOCATE(this%m_grid)
          this%m_grid => null()

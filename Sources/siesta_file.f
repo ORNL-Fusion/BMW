@@ -22,7 +22,7 @@
 
 !*******************************************************************************
 !  DERIVED-TYPE DECLARATIONS
-!  1) primed grid base class
+!  1) siesta file base class
 !
 !*******************************************************************************
 !-------------------------------------------------------------------------------
@@ -41,6 +41,18 @@
 
 !  Magnetic field scaling factor.
          REAL (rprec) :: b_factor
+
+!  Toroidal modes
+         REAL (rprec), DIMENSION(:), POINTER :: tor_modes => null()
+
+!  R half parity.
+         REAL (rprec), DIMENSION(:,:,:), POINTER :: rmncf => null()
+!  Z half parity.
+         REAL (rprec), DIMENSION(:,:,:), POINTER :: zmnsf => null()
+!  R full parity.
+         REAL (rprec), DIMENSION(:,:,:), POINTER :: rmnsf => null()
+!  Z full parity.
+         REAL (rprec), DIMENSION(:,:,:), POINTER :: zmncf => null()
 
 !  J^s current density half parity.
          REAL (rprec), DIMENSION(:,:,:), POINTER :: jksupsmnsf => null()
@@ -109,6 +121,18 @@
       CALL cdf_read(siesta_ncid, 'b_factor',                                   &
      &              siesta_file_construct%b_factor)
 
+      ALLOCATE(siesta_file_construct%tor_modes(                                &
+     &   -siesta_file_construct%ntor:siesta_file_construct%ntor))
+
+      ALLOCATE(siesta_file_construct%rmncf(                                    &
+     &   0:siesta_file_construct%mpol,                                         &
+     &   -siesta_file_construct%ntor:siesta_file_construct%ntor,               &
+     &   siesta_file_construct%nrad))
+      ALLOCATE(siesta_file_construct%zmnsf(                                    &
+     &   0:siesta_file_construct%mpol,                                         &
+     &   -siesta_file_construct%ntor:siesta_file_construct%ntor,               &
+     &   siesta_file_construct%nrad))
+
       ALLOCATE(siesta_file_construct%jksupsmnsf(                               &
      &   0:siesta_file_construct%mpol,                                         &
      &   -siesta_file_construct%ntor:siesta_file_construct%ntor,               &
@@ -122,6 +146,14 @@
      &   -siesta_file_construct%ntor:siesta_file_construct%ntor,               &
      &   siesta_file_construct%nrad))
 
+      CALL cdf_read(siesta_ncid, 'tor_modes',                                  &
+     &              siesta_file_construct%tor_modes)
+
+      CALL cdf_read(siesta_ncid, 'rmnc(m,n,r)',                                &
+     &              siesta_file_construct%rmncf)
+      CALL cdf_read(siesta_ncid, 'zmns(m,n,r)',                                &
+     &              siesta_file_construct%zmnsf)
+
       CALL cdf_read(siesta_ncid, 'jksupsmnsf(m,n,r)',                          &
      &              siesta_file_construct%jksupsmnsf)
       CALL cdf_read(siesta_ncid, 'jksupumncf(m,n,r)',                          &
@@ -130,6 +162,15 @@
      &              siesta_file_construct%jksupvmncf)
 
       IF (BTEST(siesta_file_construct%flags, siesta_lasym_flag)) THEN
+         ALLOCATE(siesta_file_construct%rmnsf(                                 &
+     &      0:siesta_file_construct%mpol,                                      &
+     &      -siesta_file_construct%ntor:siesta_file_construct%ntor,            &
+     &      siesta_file_construct%nrad))
+         ALLOCATE(siesta_file_construct%zmncf(                                 &
+     &      0:siesta_file_construct%mpol,                                      &
+     &      -siesta_file_construct%ntor:siesta_file_construct%ntor,            &
+     &      siesta_file_construct%nrad))
+
          ALLOCATE(siesta_file_construct%jksupsmncf(                            &
      &      0:siesta_file_construct%mpol,                                      &
      &      -siesta_file_construct%ntor:siesta_file_construct%ntor,            &
@@ -142,6 +183,11 @@
      &      0:siesta_file_construct%mpol,                                      &
      &      -siesta_file_construct%ntor:siesta_file_construct%ntor,            &
      &      siesta_file_construct%nrad))
+
+         CALL cdf_read(siesta_ncid, 'rmns(m,n,r)',                             &
+     &                 siesta_file_construct%rmnsf)
+         CALL cdf_read(siesta_ncid, 'zmnc(m,n,r)',                             &
+     &                 siesta_file_construct%zmncf)
 
          CALL cdf_read(siesta_ncid, 'jksupsmncf(m,n,r)',                       &
      &                 siesta_file_construct%jksupsmncf)
@@ -163,7 +209,7 @@
 !-------------------------------------------------------------------------------
 !>  @brief Deconstruct a @ref siesta_file_class object.
 !>
-!>  Deallocates memory and uninitializes a @ref m_grid_class object.
+!>  Deallocates memory and uninitializes a @ref siesta_file_class object.
 !>
 !>  @param[inout] this A @ref siesta_file_class instance.
 !-------------------------------------------------------------------------------
@@ -175,6 +221,31 @@
       TYPE (siesta_file_class), INTENT(inout) :: this
 
 !  Start of executable code
+      IF (ASSOCIATED(this%tor_modes)) THEN
+         DEALLOCATE(this%tor_modes)
+         this%tor_modes => null()
+      END IF
+
+      IF (ASSOCIATED(this%rmncf)) THEN
+         DEALLOCATE(this%rmncf)
+         this%rmncf => null()
+      END IF
+
+      IF (ASSOCIATED(this%zmnsf)) THEN
+         DEALLOCATE(this%zmnsf)
+         this%zmnsf => null()
+      END IF
+
+      IF (ASSOCIATED(this%rmnsf)) THEN
+         DEALLOCATE(this%rmnsf)
+         this%rmnsf => null()
+      END IF
+
+      IF (ASSOCIATED(this%zmncf)) THEN
+         DEALLOCATE(this%zmncf)
+         this%zmncf => null()
+      END IF
+
       IF (ASSOCIATED(this%jksupsmncf)) THEN
          DEALLOCATE(this%jksupsmncf)
          this%jksupsmncf => null()
