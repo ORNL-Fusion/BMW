@@ -20,6 +20,7 @@
 !>     @item3{@fixed_width{-h},       N, Displays the help text and exits the program.}
 !>     @item3{@fixed_width{-mgridf},  Y, Specify the mgrid input file name.}
 !>     @item3{@fixed_width{-woutf},   Y, Specify the wout input file name.}
+!>     @item3{@fixed_width{-wvacf},   Y, Specify the vacuum wout input file name.}
 !>     @item3{@fixed_width{-siestaf}, Y, Specify the siesta input file name.}
 !>     @item3{@fixed_width{-outf},    Y, Specify the output input file name.}
 !>     @item3{@fixed_width{-logf},    Y, Write screen output to a log file.}
@@ -466,6 +467,7 @@
 !>
 !>    * -mgridf
 !>    * -woutf
+!>    * -wvacf
 !>    * -siestaf
 !>    * -outf
 !>    * -logf
@@ -492,7 +494,7 @@
 
       SELECT CASE (TRIM(this%arg(index)))
 
-         CASE ('-mgridf','-woutf','-siestaf','-outf','-logf')
+         CASE ('-mgridf','-woutf','-wvacf','-siestaf','-outf','-logf')
             IF (TRIM(this%value(index)) .eq. '') THEN
                WRITE (*,1000) TRIM(this%arg(index)),                           &
      &                        TRIM(this%arg(index))
@@ -538,6 +540,8 @@
       WRITE(*,*) '                                                     '
       WRITE(*,*) '  -woutf   Y Specify the wout file name.             '
       WRITE(*,*) '                                                     '
+      WRITE(*,*) '  -woutf   Y Specify the wout file name.             '
+      WRITE(*,*) '                                                     '
       WRITE(*,*) '  -siestaf Y Specify the siesta restart file name.   '
       WRITE(*,*) '             When this flag is used, plasma currents '
       WRITE(*,*) '             are computed from siesta fields instead '
@@ -553,24 +557,24 @@
       WRITE(*,*) '                                                     '
       WRITE(*,*) '  -ju      N Force balance j^u from curl derived j^v.'
       WRITE(*,*) '                                                     '
-!     WRITE(*,*) '  -p_start Y Starting phi index to compute fields. If'
-!     WRITE(*,*) '             this flag is not set, default to index  '
-!     WRITE(*,*) '             1.                                      '
-!     WRITE(*,*) '                                                     '
-!     WRITE(*,*) '  -p_end   Y Ending phi index to compute fields. If  '
-!     WRITE(*,*) '             this flag is not set, default to the    '
-!     WRITE(*,*) '             last index.                             '
-!     WRITE(*,*) '                                                     '
+      WRITE(*,*) '  -p_start Y Starting phi index to compute fields. If'
+      WRITE(*,*) '             this flag is not set, default to index  '
+      WRITE(*,*) '             1.                                      '
+      WRITE(*,*) '                                                     '
+      WRITE(*,*) '  -p_end   Y Ending phi index to compute fields. If  '
+      WRITE(*,*) '             this flag is not set, default to the    '
+      WRITE(*,*) '             last index.                             '
+      WRITE(*,*) '                                                     '
 !$    WRITE(*,*) '  -para    Y Determines number of threads threads to '
 !$    WRITE(*,*) '             run with. A value of -1 means use the   '
 !$    WRITE(*,*) '             default number of threads.              '
 !$    WRITE(*,*) '                                                     '
-!     WRITE(*,*) '  -force   N Force override of error conditions. To  '
-!     WRITE(*,*) '             prevent loss of valid data, BMW will    '
-!     WRITE(*,*) '             terminate if an error condition is      '
-!     WRITE(*,*) '             triggerd. This flag overrides that error'
-!     WRITE(*,*) '             potential overwritting valid data.      '
-!     WRITE(*,*) '                                                     '
+      WRITE(*,*) '  -force   N Force override of error conditions. To  '
+      WRITE(*,*) '             prevent loss of valid data, BMW will    '
+      WRITE(*,*) '             terminate if an error condition is      '
+      WRITE(*,*) '             triggerd. This flag overrides that error'
+      WRITE(*,*) '             potential overwritting valid data.      '
+      WRITE(*,*) '                                                     '
       WRITE(*,*) '  -num_r   Y Number radial points. Note not used when'
       WRITE(*,*) '             mgridf is specified.                    '
       WRITE(*,*) '                                                     '

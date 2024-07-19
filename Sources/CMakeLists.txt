@@ -7,6 +7,7 @@ target_sources(bmw
                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/m_grid.f>
                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/primed_grid.f>
                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/siesta_file.f>
+               $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vmec_file.f>
                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/unprimed_grid.f>
 )
 

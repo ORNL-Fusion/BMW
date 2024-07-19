@@ -54,28 +54,80 @@
 !>  Interface for the bmw_commandline_parser constructor.
 !-------------------------------------------------------------------------------
       INTERFACE primed_grid_class
-         MODULE PROCEDURE primed_grid_construct
+         MODULE PROCEDURE primed_grid_construct_no_vac,                        &
+     &                    primed_grid_construct
       END INTERFACE
 
       CONTAINS
 !*******************************************************************************
 !  CONSTRUCTION SUBROUTINES
 !*******************************************************************************
+! FIXME: This is a temp constructor until the surface code can be updated.
 !-------------------------------------------------------------------------------
 !>  @brief Construct a @ref primed_grid_class object.
 !>
 !>  Allocates memory and initializes a @ref primed_grid_class object depending
 !>  on the option flags.
 !>
-!>  @param[in] num_v    Number of toroidal grid points.
-!>  @param[in] flags    Number of toroidal grid points.
-!>  @param[in] parallel @ref bmw_parallel_context_class object instance.
-!>  @param[in] io_unit  Unit number to write messages to.
+!>  @param[in] num_v            Number of toroidal grid points.
+!>  @param[in] flags            Number of toroidal grid points.
+!>  @param[in] siesta_file_name Name of the siesta restart file.
+!>  @param[in] parallel         @ref bmw_parallel_context_class object instance.
+!>  @param[in] io_unit          Unit number to write messages to.
 !>  @returns A pointer to a constructed @ref primed_grid_class object.
 !-------------------------------------------------------------------------------
-      FUNCTION primed_grid_construct(num_v, flags, siesta_file,                &
+      FUNCTION primed_grid_construct_no_vac(num_v, flags,                      &
+     &                                      siesta_file_name,                  &
+     &                                      parallel, io_unit)
+      USE vmec_file
+      USE read_wout_mod, ONLY: read_wout_file
+
+      IMPLICIT NONE
+
+!  Declare Arguments
+      TYPE (primed_grid_class), POINTER :: primed_grid_construct_no_vac
+      INTEGER, INTENT(in)                           :: num_v
+      INTEGER, INTENT(in)                           :: flags
+      CHARACTER (len=*), INTENT(in)                 :: siesta_file_name
+      TYPE (bmw_parallel_context_class), INTENT(in) :: parallel
+      INTEGER, INTENT(in)                           :: io_unit
+
+!  local variables
+      REAL (rprec)                                  :: start_time
+      CLASS (vmec_file_class), POINTER              :: vmec
+
+!  Start of executable code
+      start_time = profiler_get_start_time()
+
+      vmec => vmec_file_class('')
+      primed_grid_construct_no_vac =>                                          &
+     &   primed_grid_construct(num_v, flags, vmec, '',                         &
+     &                         siesta_file_name, parallel, io_unit)
+
+      CALL profiler_set_stop_time('primed_grid_construct_no_vac',              &
+     &                            start_time)
+      END FUNCTION
+
+!-------------------------------------------------------------------------------
+!>  @brief Construct a @ref primed_grid_class object.
+!>
+!>  Allocates memory and initializes a @ref primed_grid_class object depending
+!>  on the option flags.
+!>
+!>  @param[in] num_v            Number of toroidal grid points.
+!>  @param[in] flags            Number of toroidal grid points.
+!>  @param[in] vmec             VMEC file object.
+!>  @param[in] vmec_vac_file    Name of the zero beta vmec file.
+!>  @param[in] siesta_file_name Name of the siesta restart file.
+!>  @param[in] parallel         @ref bmw_parallel_context_class object instance.
+!>  @param[in] io_unit          Unit number to write messages to.
+!>  @returns A pointer to a constructed @ref primed_grid_class object.
+!-------------------------------------------------------------------------------
+      FUNCTION primed_grid_construct(num_v, flags, vmec,                       &
+     &                               vmec_vac_file, siesta_file_name,          &
      &                               parallel, io_unit)
       USE bmw_state_flags
+      USE vmec_file
 
       IMPLICIT NONE
 
@@ -83,7 +135,9 @@
       TYPE (primed_grid_class), POINTER :: primed_grid_construct
       INTEGER, INTENT(in)                           :: num_v
       INTEGER, INTENT(in)                           :: flags
-      CHARACTER (len=*), INTENT(in)                 :: siesta_file
+      CLASS (vmec_file_class), POINTER, INTENT(in)  :: vmec
+      CHARACTER (len=*), INTENT(in)                 :: vmec_vac_file
+      CHARACTER (len=*), INTENT(in)                 :: siesta_file_name
       TYPE (bmw_parallel_context_class), INTENT(in) :: parallel
       INTEGER, INTENT(in)                           :: io_unit
 
@@ -95,16 +149,17 @@
 
       IF (BTEST(flags, bmw_state_flags_ju)) THEN
          primed_grid_construct =>                                              &
-     &      primed_grid_construct_ju(num_v, parallel)
+     &      primed_grid_construct_ju(num_v, vmec, parallel)
       ELSE IF (BTEST(flags, bmw_state_flags_jv)) THEN
          primed_grid_construct =>                                              &
-     &      primed_grid_construct_jv(num_v, parallel)
+     &      primed_grid_construct_jv(num_v, vmec, parallel)
       ELSE IF (BTEST(flags, bmw_state_flags_siesta)) THEN
          primed_grid_construct =>                                              &
-     &      primed_grid_construct_siesta(num_v, siesta_file, parallel)
+     &      primed_grid_construct_siesta(num_v, vmec,                          &
+     &                                   siesta_file_name, parallel)
       ELSE
          primed_grid_construct =>                                              &
-     &      primed_grid_construct_both(num_v, parallel)
+     &      primed_grid_construct_both(num_v, vmec, parallel)
       END IF
 
       IF (parallel%offset .eq. 0) THEN
@@ -124,22 +179,21 @@
 !>  computes the currents and positions on the primed grid. Plasma currents are
 !>  obtained from Curl(B).
 !>
-!>  @param[in] num_v Number of toroidal grid points.
+!>  @param[in] num_v    Number of toroidal grid points.
+!>  @param[in] vmec     VMEC file object.
 !>  @param[in] parallel @ref bmw_parallel_context_class object instance.
 !>  @returns A pointer to a constructed @ref primed_grid_class object.
 !-------------------------------------------------------------------------------
-      FUNCTION primed_grid_construct_both(num_v, parallel)
+      FUNCTION primed_grid_construct_both(num_v, vmec, parallel)
       USE stel_constants, ONLY: twopi, mu0
-      USE read_wout_mod, ONLY: mnmax, mnmax_nyq, lasym, isigng, ns,            &
-     &                         xm, xn, xm_nyq, xn_nyq,                         &
-     &                         rmnc, zmns, currumnc, currvmnc,                 &
-     &                         rmns, zmnc, currumns, currvmns!, gmnc   ! TEMP ,gmnc
+      USE vmec_file
 
       IMPLICIT NONE
 
 !  Declare Arguments
       CLASS (primed_grid_class), POINTER :: primed_grid_construct_both
       INTEGER, INTENT(in)                            :: num_v
+      CLASS (vmec_file_class), POINTER, INTENT(in)   :: vmec
       CLASS (bmw_parallel_context_class), INTENT(in) :: parallel
 
 !  local variables
@@ -191,29 +245,29 @@
          num_v_use = num_v
       END IF
 
-      ALLOCATE(primed_grid_construct_both%x(ns,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_both%y(ns,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_both%z(ns,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_both%x(vmec%ns,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_both%y(vmec%ns,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_both%z(vmec%ns,num_u,num_v_use))
 
-      ALLOCATE(primed_grid_construct_both%j_x(ns,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_both%j_y(ns,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_both%j_z(ns,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_both%j_x(vmec%ns,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_both%j_y(vmec%ns,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_both%j_z(vmec%ns,num_u,num_v_use))
 
       ALLOCATE(cosv(num_v_use))
       ALLOCATE(sinv(num_v_use))
-      ALLOCATE(cosmu(mnmax,num_u))
-      ALLOCATE(sinmu(mnmax,num_u))
-      ALLOCATE(cosnv(mnmax,num_v_use))
-      ALLOCATE(sinnv(mnmax,num_v_use))
-      ALLOCATE(cosmu_nyq(mnmax_nyq,num_u))
-      ALLOCATE(sinmu_nyq(mnmax_nyq,num_u))
-      ALLOCATE(cosnv_nyq(mnmax_nyq,num_v_use))
-      ALLOCATE(sinnv_nyq(mnmax_nyq,num_v_use))
+      ALLOCATE(cosmu(vmec%mnmax,num_u))
+      ALLOCATE(sinmu(vmec%mnmax,num_u))
+      ALLOCATE(cosnv(vmec%mnmax,num_v_use))
+      ALLOCATE(sinnv(vmec%mnmax,num_v_use))
+      ALLOCATE(cosmu_nyq(vmec%mnmax_nyq,num_u))
+      ALLOCATE(sinmu_nyq(vmec%mnmax_nyq,num_u))
+      ALLOCATE(cosnv_nyq(vmec%mnmax_nyq,num_v_use))
+      ALLOCATE(sinnv_nyq(vmec%mnmax_nyq,num_v_use))
 
-      ds = 1.0/(ns - 1.0)
+      ds = 1.0/(vmec%ns - 1.0)
       primed_grid_construct_both%dv = twopi/num_v_use
 
-      primed_grid_construct_both%dvol = isigng*ds*du                           &
+      primed_grid_construct_both%dvol = vmec%isigng*ds*du                      &
      &   * primed_grid_construct_both%dv/(2.0*twopi)
 
 !$OMP PARALLEL
@@ -247,10 +301,10 @@
 !$OMP& SCHEDULE(STATIC)
       DO i = parallel%start(num_u), parallel%end(num_u)
          x = (i - 0.5)*du
-         cosmu(:,i) = COS(xm*x)
-         sinmu(:,i) = SIN(xm*x)
-         cosmu_nyq(:,i) = COS(xm_nyq*x)
-         sinmu_nyq(:,i) = SIN(xm_nyq*x)
+         cosmu(:,i) = COS(vmec%xm*x)
+         sinmu(:,i) = SIN(vmec%xm*x)
+         cosmu_nyq(:,i) = COS(vmec%xm_nyq*x)
+         sinmu_nyq(:,i) = SIN(vmec%xm_nyq*x)
       END DO
 !$OMP END DO
 
@@ -260,10 +314,10 @@
          x = (i - 0.5)*primed_grid_construct_both%dv
          cosv(i) = COS(x)
          sinv(i) = SIN(x)
-         cosnv(:,i) = COS(xn*x)
-         sinnv(:,i) = SIN(xn*x)
-         cosnv_nyq(:,i) = COS(xn_nyq*x)
-         sinnv_nyq(:,i) = SIN(xn_nyq*x)
+         cosnv(:,i) = COS(vmec%xn*x)
+         sinnv(:,i) = SIN(vmec%xn*x)
+         cosnv_nyq(:,i) = COS(vmec%xn_nyq*x)
+         sinnv_nyq(:,i) = SIN(vmec%xn_nyq*x)
       END DO
 !$OMP END DO
 
@@ -282,58 +336,58 @@
 !$OMP END SINGLE
       END IF
 
-      ALLOCATE(cosmn(mnmax))
-      ALLOCATE(sinmn(mnmax))
-      ALLOCATE(cosmn_nyq(mnmax_nyq))
-      IF (lasym) THEN
-         ALLOCATE(sinmn_nyq(mnmax_nyq))
+      ALLOCATE(cosmn(vmec%mnmax))
+      ALLOCATE(sinmn(vmec%mnmax))
+      ALLOCATE(cosmn_nyq(vmec%mnmax_nyq))
+      IF (vmec%lasym) THEN
+         ALLOCATE(sinmn_nyq(vmec%mnmax_nyq))
       END IF
 
 !$OMP DO
 !$OMP& SCHEDULE(STATIC)
-      DO i = parallel%start(ns*num_u*num_v_use),                               &
-     &       parallel%end(ns*num_u*num_v_use)
-         si = bmw_parallel_context_i(i, ns)
-         ui = bmw_parallel_context_j(i, ns, num_u)
-         vi = bmw_parallel_context_k(i, ns, num_u)
+      DO i = parallel%start(vmec%ns*num_u*num_v_use),                          &
+     &       parallel%end(vmec%ns*num_u*num_v_use)
+         si = bmw_parallel_context_i(i, vmec%ns)
+         ui = bmw_parallel_context_j(i, vmec%ns, num_u)
+         vi = bmw_parallel_context_k(i, vmec%ns, num_u)
 
          cosmn = cosmu(:,ui)*cosnv(:,vi) + sinmu(:,ui)*sinnv(:,vi)
          sinmn = sinmu(:,ui)*cosnv(:,vi) - cosmu(:,ui)*sinnv(:,vi)
          cosmn_nyq = cosmu_nyq(:,ui)*cosnv_nyq(:,vi)                           &
      &             + sinmu_nyq(:,ui)*sinnv_nyq(:,vi)
 
-         r = SUM(rmnc(:,si)*cosmn(:))
-         z = SUM(zmns(:,si)*sinmn(:))
+         r = SUM(vmec%rmncf(:,si)*cosmn(:))
+         z = SUM(vmec%zmnsf(:,si)*sinmn(:))
 
-         ru = -SUM(xm*rmnc(:,si)*sinmn(:))
-         rv =  SUM(xn*rmnc(:,si)*sinmn(:))
-         zu =  SUM(xm*zmns(:,si)*cosmn(:))
-         zv = -SUM(xn*zmns(:,si)*cosmn(:))
+         ru = -SUM(vmec%xm*vmec%rmncf(:,si)*sinmn(:))
+         rv =  SUM(vmec%xn*vmec%rmncf(:,si)*sinmn(:))
+         zu =  SUM(vmec%xm*vmec%zmnsf(:,si)*cosmn(:))
+         zv = -SUM(vmec%xn*vmec%zmnsf(:,si)*cosmn(:))
 
-         ju = SUM(currumnc(:,si)*cosmn_nyq(:))*mu0
-         jv = SUM(currvmnc(:,si)*cosmn_nyq(:))*mu0
+         ju = SUM(vmec%jksupumncf(:,si)*cosmn_nyq(:))*mu0
+         jv = SUM(vmec%jksupvmncf(:,si)*cosmn_nyq(:))*mu0
 
-         IF (lasym) THEN
+         IF (vmec%lasym) THEN
             sinmn_nyq = sinmu_nyq(:,ui)*cosnv_nyq(:,vi)                        &
      &                - cosmu_nyq(:,ui)*sinnv_nyq(:,vi)
 
-            r = r + SUM(rmns(:,si)*sinmn(:))
-            z = z + SUM(zmnc(:,si)*cosmn(:))
+            r = r + SUM(vmec%rmnsf(:,si)*sinmn(:))
+            z = z + SUM(vmec%zmncf(:,si)*cosmn(:))
 
-            ru = ru + SUM(xm*rmns(:,si)*cosmn(:))
-            rv = rv - SUM(xn*rmns(:,si)*cosmn(:))
-            zu = zu - SUM(xm*zmnc(:,si)*sinmn(:))
-            zv = zv + SUM(xn*zmnc(:,si)*sinmn(:))
+            ru = ru + SUM(vmec%xm*vmec%rmnsf(:,si)*cosmn(:))
+            rv = rv - SUM(vmec%xn*vmec%rmnsf(:,si)*cosmn(:))
+            zu = zu - SUM(vmec%xm*vmec%zmncf(:,si)*sinmn(:))
+            zv = zv + SUM(vmec%xn*vmec%zmncf(:,si)*sinmn(:))
 
-            ju = ju + SUM(currumns(:,si)*sinmn_nyq(:))*mu0
-            jv = jv + SUM(currvmns(:,si)*sinmn_nyq(:))*mu0
+            ju = ju + SUM(vmec%jksupumnsf(:,si)*sinmn_nyq(:))*mu0
+            jv = jv + SUM(vmec%jksupvmnsf(:,si)*sinmn_nyq(:))*mu0
          END IF
 
          jr = ju*ru + jv*rv
          jp = jv*r
          primed_grid_construct_both%j_z(si,ui,vi) = ju*zu + jv*zv
 
-         IF (si .eq. 1 .or. si .eq. ns) THEN
+         IF (si .eq. 1 .or. si .eq. vmec%ns) THEN
             jr = jr/2.0
             jp = jp/2.0
             primed_grid_construct_both%j_z(si,ui,vi) =                         &
@@ -354,7 +408,7 @@
       DEALLOCATE(cosmn)
       DEALLOCATE(sinmn)
       DEALLOCATE(cosmn_nyq)
-      IF (lasym) THEN
+      IF (vmec%lasym) THEN
          DEALLOCATE(sinmn_nyq)
       END IF
 !$OMP END PARALLEL
@@ -395,23 +449,21 @@
 !>
 !>  J^u = (p' + J^v*B^u)/B^v
 !>
-!>  @param[in] num_v Number of toroidal grid points.
+!>  @param[in] num_v    Number of toroidal grid points.
+!>  @param[in] vmec     VMEC file object.
 !>  @param[in] parallel @ref bmw_parallel_context_class object instance.
 !>  @returns A pointer to a constructed @ref primed_grid_class object.
 !-------------------------------------------------------------------------------
-      FUNCTION primed_grid_construct_ju(num_v, parallel)
+      FUNCTION primed_grid_construct_ju(num_v, vmec, parallel)
       USE stel_constants, ONLY: twopi, mu0
-      USE read_wout_mod, ONLY: mnmax, mnmax_nyq, lasym, isigng, ns,            &
-     &                         rmnc, rmns, currvmnc,                           &
-     &                         zmnc, zmns, currvmns,                           &
-     &                         bsupumnc, bsupvmnc, bsupumns, bsupvmns,         &
-     &                         xm, xn, xm_nyq, xn_nyq, presf
+      USE vmec_file
 
       IMPLICIT NONE
 
 !  Declare Arguments
       CLASS (primed_grid_class), POINTER :: primed_grid_construct_ju
       INTEGER, INTENT(in)                            :: num_v
+      CLASS (vmec_file_class), POINTER, INTENT(in)   :: vmec
       CLASS (bmw_parallel_context_class), INTENT(in) :: parallel
 
 !  local variables
@@ -472,41 +524,44 @@
          num_v_use = num_v
       END IF
 
-      ALLOCATE(primed_grid_construct_ju%x(ns - 1,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_ju%y(ns - 1,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_ju%z(ns - 1,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_ju%x(vmec%ns - 1,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_ju%y(vmec%ns - 1,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_ju%z(vmec%ns - 1,num_u,num_v_use))
 
-      ALLOCATE(primed_grid_construct_ju%j_x(ns - 1,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_ju%j_y(ns - 1,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_ju%j_z(ns - 1,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_ju%j_x(vmec%ns - 1,num_u,                 &
+     &                                      num_v_use))
+      ALLOCATE(primed_grid_construct_ju%j_y(vmec%ns - 1,num_u,                 &
+     &                                      num_v_use))
+      ALLOCATE(primed_grid_construct_ju%j_z(vmec%ns - 1,num_u,                 &
+     &                                      num_v_use))
 
       ALLOCATE(cosv(num_v_use))
       ALLOCATE(sinv(num_v_use))
-      ALLOCATE(cosmu(mnmax,num_u))
-      ALLOCATE(sinmu(mnmax,num_u))
-      ALLOCATE(cosnv(mnmax,num_v_use))
-      ALLOCATE(sinnv(mnmax,num_v_use))
-      ALLOCATE(cosmu_nyq(mnmax_nyq,num_u))
-      ALLOCATE(sinmu_nyq(mnmax_nyq,num_u))
-      ALLOCATE(cosnv_nyq(mnmax_nyq,num_v_use))
-      ALLOCATE(sinnv_nyq(mnmax_nyq,num_v_use))
+      ALLOCATE(cosmu(vmec%mnmax,num_u))
+      ALLOCATE(sinmu(vmec%mnmax,num_u))
+      ALLOCATE(cosnv(vmec%mnmax,num_v_use))
+      ALLOCATE(sinnv(vmec%mnmax,num_v_use))
+      ALLOCATE(cosmu_nyq(vmec%mnmax_nyq,num_u))
+      ALLOCATE(sinmu_nyq(vmec%mnmax_nyq,num_u))
+      ALLOCATE(cosnv_nyq(vmec%mnmax_nyq,num_v_use))
+      ALLOCATE(sinnv_nyq(vmec%mnmax_nyq,num_v_use))
 
-      ALLOCATE(rmnch(mnmax,ns - 1))
-      ALLOCATE(zmnsh(mnmax,ns - 1))
-      ALLOCATE(currvmnch(mnmax_nyq,ns - 1))
+      ALLOCATE(rmnch(vmec%mnmax,vmec%ns - 1))
+      ALLOCATE(zmnsh(vmec%mnmax,vmec%ns - 1))
+      ALLOCATE(currvmnch(vmec%mnmax_nyq,vmec%ns - 1))
 
-      IF (lasym) THEN
-         ALLOCATE(rmnsh(mnmax,ns - 1))
-         ALLOCATE(zmnch(mnmax,ns - 1))
-         ALLOCATE(currvmnsh(mnmax_nyq,ns - 1))
+      IF (vmec%lasym) THEN
+         ALLOCATE(rmnsh(vmec%mnmax,vmec%ns - 1))
+         ALLOCATE(zmnch(vmec%mnmax,vmec%ns - 1))
+         ALLOCATE(currvmnsh(vmec%mnmax_nyq,vmec%ns - 1))
       END IF
 
-      ALLOCATE(p_prime(ns - 1))
+      ALLOCATE(p_prime(vmec%ns - 1))
 
-      ds = 1.0/(ns - 1.0)
+      ds = 1.0/(vmec%ns - 1.0)
       primed_grid_construct_ju%dv = twopi/num_v_use
 
-      primed_grid_construct_ju%dvol = isigng*ds*du                             &
+      primed_grid_construct_ju%dvol = vmec%isigng*ds*du                        &
      &   * primed_grid_construct_ju%dv/(2.0*twopi)
 
 !$OMP PARALLEL
@@ -538,7 +593,7 @@
          currvmnch = 0.0
          p_prime = 0.0
 !$OMP END WORKSHARE
-         IF (lasym) THEN
+         IF (vmec%lasym) THEN
 !$OMP WORKSHARE
             rmnsh = 0.0
             zmnch = 0.0
@@ -549,19 +604,21 @@
 
 !$OMP DO
 !$OMP& SCHEDULE(STATIC)
-      DO i = parallel%start(ns - 1), parallel%end(ns - 1)
-         rmnch(:,i) = (rmnc(:,i + 1) + rmnc(:,i))/2.0
-         zmnsh(:,i) = (zmns(:,i + 1) + zmns(:,i))/2.0
+      DO i = parallel%start(vmec%ns - 1), parallel%end(vmec%ns - 1)
+         rmnch(:,i) = (vmec%rmncf(:,i + 1) + vmec%rmncf(:,i))/2.0
+         zmnsh(:,i) = (vmec%zmnsf(:,i + 1) + vmec%zmnsf(:,i))/2.0
 
-         currvmnch(:,i) = (currvmnc(:,i + 1) + currvmnc(:,i))/2.0
+         currvmnch(:,i) = (vmec%jksupvmncf(:,i + 1) +                          &
+     &                     vmec%jksupvmncf(:,i))/2.0
 
-         p_prime(i) = (presf(i + 1) - presf(i))/ds
+         p_prime(i) = (vmec%presf(i + 1) - vmec%presf(i))/ds
 
-         IF (lasym) THEN
-            rmnsh(:,i) = (rmns(:,i + 1) + rmns(:,i))/2.0
-            zmnch(:,i) = (zmnc(:,i + 1) + zmnc(:,i))/2.0
+         IF (vmec%lasym) THEN
+            rmnsh(:,i) = (vmec%rmnsf(:,i + 1) + vmec%rmnsf(:,i))/2.0
+            zmnch(:,i) = (vmec%zmncf(:,i + 1) + vmec%zmncf(:,i))/2.0
 
-            currvmnsh(:,i) = (currvmns(:,i + 1) + currvmns(:,i))/2.0
+            currvmnsh(:,i) = (vmec%jksupvmnsf(:,i + 1) +                       &
+     &                        vmec%jksupvmnsf(:,i))/2.0
          END IF
       END DO
 !$OMP END DO
@@ -570,10 +627,10 @@
 !$OMP& SCHEDULE(STATIC)
       DO i = parallel%start(num_u), parallel%end(num_u)
          x = (i - 0.5)*du
-         cosmu(:,i) = COS(xm*x)
-         sinmu(:,i) = SIN(xm*x)
-         cosmu_nyq(:,i) = COS(xm_nyq*x)
-         sinmu_nyq(:,i) = SIN(xm_nyq*x)
+         cosmu(:,i) = COS(vmec%xm*x)
+         sinmu(:,i) = SIN(vmec%xm*x)
+         cosmu_nyq(:,i) = COS(vmec%xm_nyq*x)
+         sinmu_nyq(:,i) = SIN(vmec%xm_nyq*x)
       END DO
 !$OMP END DO
 
@@ -583,10 +640,10 @@
          x = (i - 0.5)*primed_grid_construct_ju%dv
          cosv(i) = COS(x)
          sinv(i) = SIN(x)
-         cosnv(:,i) = COS(xn*x)
-         sinnv(:,i) = SIN(xn*x)
-         cosnv_nyq(:,i) = COS(xn_nyq*x)
-         sinnv_nyq(:,i) = SIN(xn_nyq*x)
+         cosnv(:,i) = COS(vmec%xn*x)
+         sinnv(:,i) = SIN(vmec%xn*x)
+         cosnv_nyq(:,i) = COS(vmec%xn_nyq*x)
+         sinnv_nyq(:,i) = SIN(vmec%xn_nyq*x)
       END DO
 !$OMP END DO
 
@@ -606,7 +663,7 @@
          CALL parallel%reduce(zmnsh)
          CALL parallel%reduce(currvmnch)
          CALL parallel%reduce(p_prime)
-         IF (lasym) THEN
+         IF (vmec%lasym) THEN
             CALL parallel%reduce(rmnsh)
             CALL parallel%reduce(zmnch)
             CALL parallel%reduce(currvmnsh)
@@ -614,20 +671,20 @@
 !$OMP END SINGLE
       END IF
 
-      ALLOCATE(cosmn(mnmax))
-      ALLOCATE(sinmn(mnmax))
-      ALLOCATE(cosmn_nyq(mnmax_nyq))
-      IF (lasym) THEN
-         ALLOCATE(sinmn_nyq(mnmax_nyq))
+      ALLOCATE(cosmn(vmec%mnmax))
+      ALLOCATE(sinmn(vmec%mnmax))
+      ALLOCATE(cosmn_nyq(vmec%mnmax_nyq))
+      IF (vmec%lasym) THEN
+         ALLOCATE(sinmn_nyq(vmec%mnmax_nyq))
       END IF
 
 !$OMP DO
 !$OMP& SCHEDULE(STATIC)
-      DO i = parallel%start(ns*num_u*num_v_use),                               &
-     &       parallel%end(ns*num_u*num_v_use)
-         si = bmw_parallel_context_i(i, ns)
-         ui = bmw_parallel_context_j(i, ns, num_u)
-         vi = bmw_parallel_context_k(i, ns, num_u)
+      DO i = parallel%start((vmec%ns - 1)*num_u*num_v_use),                    &
+     &       parallel%end((vmec%ns - 1)*num_u*num_v_use)
+         si = bmw_parallel_context_i(i, vmec%ns - 1)
+         ui = bmw_parallel_context_j(i, vmec%ns - 1, num_u)
+         vi = bmw_parallel_context_k(i, vmec%ns - 1, num_u)
 
          cosmn = cosmu(:,ui)*cosnv(:,vi) + sinmu(:,ui)*sinnv(:,vi)
          sinmn = sinmu(:,ui)*cosnv(:,vi) - cosmu(:,ui)*sinnv(:,vi)
@@ -637,32 +694,32 @@
          r = SUM(rmnch(:,si)*cosmn(:))
          z = SUM(zmnsh(:,si)*sinmn(:))
 
-         ru = -SUM(xm*rmnch(:,si)*sinmn(:))
-         rv =  SUM(xn*rmnch(:,si)*sinmn(:))
-         zu =  SUM(xm*zmnsh(:,si)*cosmn(:))
-         zv = -SUM(xn*zmnsh(:,si)*cosmn(:))
+         ru = -SUM(vmec%xm*rmnch(:,si)*sinmn(:))
+         rv =  SUM(vmec%xn*rmnch(:,si)*sinmn(:))
+         zu =  SUM(vmec%xm*zmnsh(:,si)*cosmn(:))
+         zv = -SUM(vmec%xn*zmnsh(:,si)*cosmn(:))
 
          jv = SUM(currvmnch(:,si)*cosmn_nyq(:))
 
-         bu = SUM(bsupumnc(:,si + 1)*cosmn_nyq(:))
-         bv = SUM(bsupvmnc(:,si + 1)*cosmn_nyq(:))
+         bu = SUM(vmec%bsupumnch(:,si + 1)*cosmn_nyq(:))
+         bv = SUM(vmec%bsupvmnch(:,si + 1)*cosmn_nyq(:))
 
-         IF (lasym) THEN
+         IF (vmec%lasym) THEN
             sinmn_nyq = sinmu_nyq(:,ui)*cosnv_nyq(:,vi)                        &
      &                - cosmu_nyq(:,ui)*sinnv_nyq(:,vi)
 
             r = r + SUM(rmnsh(:,si)*sinmn(:))
             z = z + SUM(zmnch(:,si)*cosmn(:))
 
-            ru = ru + SUM(xm*rmnsh(:,si)*cosmn(:))
-            rv = rv - SUM(xn*rmnsh(:,si)*cosmn(:))
-            zu = zu - SUM(xm*zmnch(:,si)*sinmn(:))
-            zv = zv + SUM(xn*zmnch(:,si)*sinmn(:))
+            ru = ru + SUM(vmec%xm*rmnsh(:,si)*cosmn(:))
+            rv = rv - SUM(vmec%xn*rmnsh(:,si)*cosmn(:))
+            zu = zu - SUM(vmec%xm*zmnch(:,si)*sinmn(:))
+            zv = zv + SUM(vmec%xn*zmnch(:,si)*sinmn(:))
 
             jv = jv + SUM(currvmnsh(:,si)*sinmn_nyq(:))
 
-            bu = bu + SUM(bsupumns(:,si + 1)*sinmn_nyq(:))
-            bv = bv + SUM(bsupvmns(:,si + 1)*sinmn_nyq(:))
+            bu = bu + SUM(vmec%bsupumnsh(:,si + 1)*sinmn_nyq(:))
+            bv = bv + SUM(vmec%bsupvmnsh(:,si + 1)*sinmn_nyq(:))
          END IF
 
          ju = (p_prime(si) + jv*bu)/bv*mu0
@@ -686,7 +743,7 @@
       DEALLOCATE(cosmn)
       DEALLOCATE(sinmn)
       DEALLOCATE(cosmn_nyq)
-      IF (lasym) THEN
+      IF (vmec%lasym) THEN
          DEALLOCATE(sinmn_nyq)
       END IF
 !$OMP END PARALLEL
@@ -706,7 +763,7 @@
       DEALLOCATE(zmnsh)
       DEALLOCATE(currvmnch)
       DEALLOCATE(p_prime)
-      IF (lasym) THEN
+      IF (vmec%lasym) THEN
          DEALLOCATE(rmnsh)
          DEALLOCATE(zmnch)
          DEALLOCATE(currvmnsh)
@@ -737,23 +794,21 @@
 !>
 !>  J^v = (J^u*B^v - p')/B^u
 !>
-!>  @param[in] num_v Number of toroidal grid points.
+!>  @param[in] num_v    Number of toroidal grid points.
+!>  @param[in] vmec     VMEC file object.
 !>  @param[in] parallel @ref bmw_parallel_context_class object instance.
 !>  @returns A pointer to a constructed @ref primed_grid_class object.
 !-------------------------------------------------------------------------------
-      FUNCTION primed_grid_construct_jv(num_v, parallel)
+      FUNCTION primed_grid_construct_jv(num_v, vmec, parallel)
       USE stel_constants, ONLY: twopi, mu0
-      USE read_wout_mod, ONLY: mnmax, mnmax_nyq, lasym, isigng, ns,            &
-     &                         rmnc, rmns, currumnc,                           &
-     &                         zmnc, zmns, currumns,                           &
-     &                         bsupumnc, bsupvmnc, bsupumns, bsupvmns,         &
-     &                         xm, xn, xm_nyq, xn_nyq, presf
+      USE vmec_file
 
       IMPLICIT NONE
 
 !  Declare Arguments
       CLASS (primed_grid_class), POINTER :: primed_grid_construct_jv
       INTEGER, INTENT(in)                            :: num_v
+      CLASS (vmec_file_class), POINTER, INTENT(in)   :: vmec
       CLASS (bmw_parallel_context_class), INTENT(in) :: parallel
 
 !  local variables
@@ -814,41 +869,44 @@
          num_v_use = num_v
       END IF
 
-      ALLOCATE(primed_grid_construct_jv%x(ns - 1,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_jv%y(ns - 1,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_jv%z(ns - 1,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_jv%x(vmec%ns - 1,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_jv%y(vmec%ns - 1,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_jv%z(vmec%ns - 1,num_u,num_v_use))
 
-      ALLOCATE(primed_grid_construct_jv%j_x(ns - 1,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_jv%j_y(ns - 1,num_u,num_v_use))
-      ALLOCATE(primed_grid_construct_jv%j_z(ns - 1,num_u,num_v_use))
+      ALLOCATE(primed_grid_construct_jv%j_x(vmec%ns - 1,num_u,                 &
+     &                                      num_v_use))
+      ALLOCATE(primed_grid_construct_jv%j_y(vmec%ns - 1,num_u,                 &
+     &                                      num_v_use))
+      ALLOCATE(primed_grid_construct_jv%j_z(vmec%ns - 1,num_u,                 &
+     &                                      num_v_use))
 
       ALLOCATE(cosv(num_v_use))
       ALLOCATE(sinv(num_v_use))
-      ALLOCATE(cosmu(mnmax,num_u))
-      ALLOCATE(sinmu(mnmax,num_u))
-      ALLOCATE(cosnv(mnmax,num_v_use))
-      ALLOCATE(sinnv(mnmax,num_v_use))
-      ALLOCATE(cosmu_nyq(mnmax_nyq,num_u))
-      ALLOCATE(sinmu_nyq(mnmax_nyq,num_u))
-      ALLOCATE(cosnv_nyq(mnmax_nyq,num_v_use))
-      ALLOCATE(sinnv_nyq(mnmax_nyq,num_v_use))
+      ALLOCATE(cosmu(vmec%mnmax,num_u))
+      ALLOCATE(sinmu(vmec%mnmax,num_u))
+      ALLOCATE(cosnv(vmec%mnmax,num_v_use))
+      ALLOCATE(sinnv(vmec%mnmax,num_v_use))
+      ALLOCATE(cosmu_nyq(vmec%mnmax_nyq,num_u))
+      ALLOCATE(sinmu_nyq(vmec%mnmax_nyq,num_u))
+      ALLOCATE(cosnv_nyq(vmec%mnmax_nyq,num_v_use))
+      ALLOCATE(sinnv_nyq(vmec%mnmax_nyq,num_v_use))
 
-      ALLOCATE(rmnch(mnmax,ns - 1))
-      ALLOCATE(zmnsh(mnmax,ns - 1))
-      ALLOCATE(currumnch(mnmax_nyq,ns - 1))
+      ALLOCATE(rmnch(vmec%mnmax,vmec%ns - 1))
+      ALLOCATE(zmnsh(vmec%mnmax,vmec%ns - 1))
+      ALLOCATE(currumnch(vmec%mnmax_nyq,vmec%ns - 1))
 
-      IF (lasym) THEN
-         ALLOCATE(rmnsh(mnmax,ns - 1))
-         ALLOCATE(zmnch(mnmax,ns - 1))
-         ALLOCATE(currumnsh(mnmax_nyq,ns - 1))
+      IF (vmec%lasym) THEN
+         ALLOCATE(rmnsh(vmec%mnmax,vmec%ns - 1))
+         ALLOCATE(zmnch(vmec%mnmax,vmec%ns - 1))
+         ALLOCATE(currumnsh(vmec%mnmax_nyq,vmec%ns - 1))
       END IF
 
-      ALLOCATE(p_prime(ns - 1))
+      ALLOCATE(p_prime(vmec%ns - 1))
 
-      ds = 1.0/(ns - 1.0)
+      ds = 1.0/(vmec%ns - 1.0)
       primed_grid_construct_jv%dv = twopi/num_v_use
 
-      primed_grid_construct_jv%dvol = isigng*ds*du                             &
+      primed_grid_construct_jv%dvol = vmec%isigng*ds*du                        &
      &   * primed_grid_construct_jv%dv/(2.0*twopi)
 
 !$OMP PARALLEL
@@ -880,7 +938,7 @@
          currumnch = 0.0
          p_prime = 0.0
 !$OMP END WORKSHARE
-         IF (lasym) THEN
+         IF (vmec%lasym) THEN
             rmnsh = 0.0
             zmnch = 0.0
             currumnsh = 0.0
@@ -889,21 +947,23 @@
 
 !$OMP DO
 !$OMP& SCHEDULE(STATIC)
-      DO i = parallel%start(ns - 1), parallel%end(ns - 1)
-         si = bmw_parallel_context_i(i, ns)
+      DO i = parallel%start(vmec%ns - 1), parallel%end(vmec%ns - 1)
+         si = bmw_parallel_context_i(i, vmec%ns - 1)
 
-         rmnch(:,si) = (rmnc(:,si + 1) + rmnc(:,si))/2.0
-         zmnsh(:,si) = (zmns(:,si + 1) + zmns(:,si))/2.0
+         rmnch(:,si) = (vmec%rmncf(:,si + 1) + vmec%rmncf(:,si))/2.0
+         zmnsh(:,si) = (vmec%zmnsf(:,si + 1) + vmec%zmnsf(:,si))/2.0
 
-         currumnch(:,si) = (currumnc(:,si + 1) + currumnc(:,si))/2.0
+         currumnch(:,si) = (vmec%jksupvmncf(:,si + 1) +                        &
+     &                      vmec%jksupvmncf(:,si))/2.0
 
-         p_prime(si) = (presf(si + 1) - presf(si))/ds
+         p_prime(si) = (vmec%presf(si + 1) - vmec%presf(si))/ds
 
-         IF (lasym) THEN
-            rmnsh(:,si) = (rmns(:,si + 1) + rmns(:,si))/2.0
-            zmnch(:,si) = (zmnc(:,si + 1) + zmnc(:,si))/2.0
+         IF (vmec%lasym) THEN
+            rmnsh(:,si) = (vmec%rmnsf(:,si + 1) + vmec%rmnsf(:,si))/2.0
+            zmnch(:,si) = (vmec%zmncf(:,si + 1) + vmec%zmncf(:,si))/2.0
 
-            currumnsh(:,si) = (currumns(:,si + 1) + currumns(:,si))/2.0
+            currumnsh(:,si) = (vmec%jksupvmnsf(:,si + 1) +                     &
+     &                         vmec%jksupvmnsf(:,si))/2.0
          END IF
       END DO
 !$OMP END DO
@@ -912,10 +972,10 @@
 !$OMP& SCHEDULE(STATIC)
       DO i = parallel%start(num_u), parallel%end(num_u)
          x = (i - 0.5)*du
-         cosmu(:,i) = COS(xm*x)
-         sinmu(:,i) = SIN(xm*x)
-         cosmu_nyq(:,i) = COS(xm_nyq*x)
-         sinmu_nyq(:,i) = SIN(xm_nyq*x)
+         cosmu(:,i) = COS(vmec%xm*x)
+         sinmu(:,i) = SIN(vmec%xm*x)
+         cosmu_nyq(:,i) = COS(vmec%xm_nyq*x)
+         sinmu_nyq(:,i) = SIN(vmec%xm_nyq*x)
       END DO
 !$OMP END DO
 
@@ -925,10 +985,10 @@
          x = (i - 0.5)*primed_grid_construct_jv%dv
          cosv(i) = COS(x)
          sinv(i) = SIN(x)
-         cosnv(:,i) = COS(xn*x)
-         sinnv(:,i) = SIN(xn*x)
-         cosnv_nyq(:,i) = COS(xn_nyq*x)
-         sinnv_nyq(:,i) = SIN(xn_nyq*x)
+         cosnv(:,i) = COS(vmec%xn*x)
+         sinnv(:,i) = SIN(vmec%xn*x)
+         cosnv_nyq(:,i) = COS(vmec%xn_nyq*x)
+         sinnv_nyq(:,i) = SIN(vmec%xn_nyq*x)
       END DO
 !$OMP END DO
 
@@ -948,7 +1008,7 @@
          CALL parallel%reduce(zmnsh)
          CALL parallel%reduce(currumnch)
          CALL parallel%reduce(p_prime)
-         IF (lasym) THEN
+         IF (vmec%lasym) THEN
             CALL parallel%reduce(rmnsh)
             CALL parallel%reduce(zmnch)
             CALL parallel%reduce(currumnsh)
@@ -956,20 +1016,20 @@
 !$OMP END SINGLE
       END IF
 
-      ALLOCATE(cosmn(mnmax))
-      ALLOCATE(sinmn(mnmax))
-      ALLOCATE(cosmn_nyq(mnmax_nyq))
-      IF (lasym) THEN
-         ALLOCATE(sinmn_nyq(mnmax_nyq))
+      ALLOCATE(cosmn(vmec%mnmax))
+      ALLOCATE(sinmn(vmec%mnmax))
+      ALLOCATE(cosmn_nyq(vmec%mnmax_nyq))
+      IF (vmec%lasym) THEN
+         ALLOCATE(sinmn_nyq(vmec%mnmax_nyq))
       END IF
 
 !$OMP DO
 !$OMP& SCHEDULE(STATIC)
-      DO i = parallel%start(ns*num_u*num_v_use),                               &
-     &       parallel%end(ns*num_u*num_v_use)
-         si = bmw_parallel_context_i(i, ns)
-         ui = bmw_parallel_context_j(i, ns, num_u)
-         vi = bmw_parallel_context_k(i, ns, num_u)
+      DO i = parallel%start((vmec%ns - 1)*num_u*num_v_use),                    &
+     &       parallel%end((vmec%ns - 1)*num_u*num_v_use)
+         si = bmw_parallel_context_i(i, vmec%ns - 1)
+         ui = bmw_parallel_context_j(i, vmec%ns - 1, num_u)
+         vi = bmw_parallel_context_k(i, vmec%ns - 1, num_u)
 
          cosmn = cosmu(:,ui)*cosnv(:,vi) + sinmu(:,ui)*sinnv(:,vi)
          sinmn = sinmu(:,ui)*cosnv(:,vi) - cosmu(:,ui)*sinnv(:,vi)
@@ -979,32 +1039,32 @@
          r = SUM(rmnch(:,si)*cosmn(:))
          z = SUM(zmnsh(:,si)*sinmn(:))
 
-         ru = -SUM(xm*rmnch(:,si)*sinmn(:))
-         rv =  SUM(xn*rmnch(:,si)*sinmn(:))
-         zu =  SUM(xm*zmnsh(:,si)*cosmn(:))
-         zv = -SUM(xn*zmnsh(:,si)*cosmn(:))
+         ru = -SUM(vmec%xm*rmnch(:,si)*sinmn(:))
+         rv =  SUM(vmec%xn*rmnch(:,si)*sinmn(:))
+         zu =  SUM(vmec%xm*zmnsh(:,si)*cosmn(:))
+         zv = -SUM(vmec%xn*zmnsh(:,si)*cosmn(:))
 
          ju = SUM(currumnch(:,si)*cosmn_nyq(:))
 
-         bu = SUM(bsupumnc(:,si + 1)*cosmn_nyq(:))
-         bv = SUM(bsupvmnc(:,si + 1)*cosmn_nyq(:))
+         bu = SUM(vmec%bsupumnch(:,si + 1)*cosmn_nyq(:))
+         bv = SUM(vmec%bsupvmnch(:,si + 1)*cosmn_nyq(:))
 
-         IF (lasym) THEN
+         IF (vmec%lasym) THEN
             sinmn_nyq = sinmu_nyq(:,ui)*cosnv_nyq(:,vi)                        &
      &                - cosmu_nyq(:,ui)*sinnv_nyq(:,vi)
 
             r = r + SUM(rmnsh(:,si)*sinmn(:))
             z = z + SUM(zmnch(:,si)*cosmn(:))
 
-            ru = ru + SUM(xm*rmnsh(:,si)*cosmn(:))
-            rv = rv - SUM(xn*rmnsh(:,si)*cosmn(:))
-            zu = zu - SUM(xm*zmnch(:,si)*sinmn(:))
-            zv = zv + SUM(xn*zmnch(:,si)*sinmn(:))
+            ru = ru + SUM(vmec%xm*rmnsh(:,si)*cosmn(:))
+            rv = rv - SUM(vmec%xn*rmnsh(:,si)*cosmn(:))
+            zu = zu - SUM(vmec%xm*zmnch(:,si)*sinmn(:))
+            zv = zv + SUM(vmec%xn*zmnch(:,si)*sinmn(:))
 
             ju = ju + SUM(currumnsh(:,si)*sinmn_nyq(:))
 
-            bu = bu + SUM(bsupumns(:,si + 1)*sinmn_nyq(:))
-            bv = bv + SUM(bsupvmns(:,si + 1)*sinmn_nyq(:))
+            bu = bu + SUM(vmec%bsupumnsh(:,si + 1)*sinmn_nyq(:))
+            bv = bv + SUM(vmec%bsupvmnsh(:,si + 1)*sinmn_nyq(:))
          END IF
 
          jv = (ju*bv - p_prime(si))/bu*mu0
@@ -1028,7 +1088,7 @@
       DEALLOCATE(cosmn)
       DEALLOCATE(sinmn)
       DEALLOCATE(cosmn_nyq)
-      IF (lasym) THEN
+      IF (vmec%lasym) THEN
          DEALLOCATE(sinmn_nyq)
       END IF
 !$OMP END PARALLEL
@@ -1048,7 +1108,7 @@
       DEALLOCATE(zmnsh)
       DEALLOCATE(currumnch)
       DEALLOCATE(p_prime)
-      IF (lasym) THEN
+      IF (vmec%lasym) THEN
          DEALLOCATE(rmnsh)
          DEALLOCATE(zmnch)
          DEALLOCATE(currumnsh)
@@ -1077,23 +1137,24 @@
 !>  This computes the currents and positions on the primed grid. Plasma currents
 !>  are obtained from Curl(B) of the siesta solution.
 !>
-!>  @param[in] num_v       Number of toroidal grid points.
-!>  @param[in] siesta_file Name of the siesta restart file.
-!>  @param[in] parallel    @ref bmw_parallel_context_class object instance.
+!>  @param[in] num_v            Number of toroidal grid points.
+!>  @param[in] vmec             VMEC file object.
+!>  @param[in] siesta_file_name Name of the siesta restart file.
+!>  @param[in] parallel         @ref bmw_parallel_context_class object instance.
 !>  @returns A pointer to a constructed @ref primed_grid_class object.
 !-------------------------------------------------------------------------------
-      FUNCTION primed_grid_construct_siesta(num_v, siesta_file_name,           &
-     &                                      parallel)
+      FUNCTION primed_grid_construct_siesta(num_v, vmec,                       &
+     &                                      siesta_file_name, parallel)
       USE stel_constants, ONLY: twopi, mu0
-      USE read_wout_mod, ONLY: nfp, ns, rmnc, rmns, zmnc, zmns, isigng,        &
-     &                         mnmax, xm, xn, lasym
       USE siesta_file
+      USE vmec_file
 
       IMPLICIT NONE
 
 !  Declare Arguments
       CLASS (primed_grid_class), POINTER :: primed_grid_construct_siesta
       INTEGER, INTENT(in)                            :: num_v
+      CLASS (vmec_file_class), POINTER, INTENT(in)   :: vmec
       CHARACTER (len=*)                              :: siesta_file_name
       CLASS (bmw_parallel_context_class), INTENT(in) :: parallel
 
@@ -1121,25 +1182,15 @@
       REAL (rprec)                                   :: jz
       INTEGER                                        :: m
       INTEGER                                        :: n
-      INTEGER                                        :: ilow
-      INTEGER                                        :: ihigh
-      REAL (rprec)                                   :: wlow
-      REAL (rprec)                                   :: whigh
       REAL (rprec), DIMENSION(:), ALLOCATABLE        :: cosv
       REAL (rprec), DIMENSION(:), ALLOCATABLE        :: sinv
       REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: cosmu
       REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: sinmu
       REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: cosnv
       REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: sinnv
-      REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: cosmu_vmec
-      REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: sinmu_vmec
-      REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: cosnv_vmec
-      REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: sinnv_vmec
       REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: cosmn
       REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: sinmn
-      REAL (rprec), DIMENSION(:), ALLOCATABLE        :: cosmn_vmec
-      REAL (rprec), DIMENSION(:), ALLOCATABLE        :: sinmn_vmec
-      REAL (rprec), DIMENSION(:), ALLOCATABLE        :: amnint
+      REAL (rprec), DIMENSION(:,:), ALLOCATABLE      :: amnint
       INTEGER                                        :: num_v_use
       CLASS (siesta_file_class), POINTER             :: siesta
 
@@ -1176,26 +1227,22 @@
 
       ALLOCATE(cosv(num_v_use))
       ALLOCATE(sinv(num_v_use))
-      ALLOCATE(cosmu_vmec(mnmax,num_u))
-      ALLOCATE(sinmu_vmec(mnmax,num_u))
-      ALLOCATE(cosnv_vmec(mnmax,num_v_use))
-      ALLOCATE(sinnv_vmec(mnmax,num_v_use))
       ALLOCATE(cosmu(0:siesta%mpol,num_u))
       ALLOCATE(sinmu(0:siesta%mpol,num_u))
       ALLOCATE(cosnv(-siesta%ntor:siesta%ntor,num_v_use))
       ALLOCATE(sinnv(-siesta%ntor:siesta%ntor,num_v_use))
 
-      ds = 1.0/(ns - 1.0)
+      ds = 1.0/(siesta%nrad - 1.0)
       primed_grid_construct_siesta%dv = twopi/num_v_use
 
-      primed_grid_construct_siesta%dvol = isigng*ds*du                         &
+!  FIXME: Get the sign of the jacobian from the siesta restart file.
+      primed_grid_construct_siesta%dvol = vmec%isigng*ds*du                    &
      &   * primed_grid_construct_siesta%dv/(2.0*twopi)
 
 !$OMP PARALLEL
 !$OMP& DEFAULT(SHARED)
 !$OMP& PRIVATE(i, x, si, ui, vi, n, m, r, ru, rv, z, zu, zv, rs, zs,           &
-!$OMP&         js, ju, jv, jr, jp, jz, ilow, wlow, ihigh, whigh,               &
-!$OMP&         cosmn, sinmn, cosmn_vmec, sinmn_vmec, amnint)
+!$OMP&         js, ju, jv, jr, jp, jz, cosmn, sinmn, amnint)
 
 !  Multi process will do an all reduce so these arrays need to be initalized.
       IF (parallel%stride .gt. 1) THEN
@@ -1206,10 +1253,6 @@
          primed_grid_construct_siesta%j_x = 0.0
          primed_grid_construct_siesta%j_y = 0.0
          primed_grid_construct_siesta%j_z = 0.0
-         cosmu_vmec = 0.0
-         cosnv_vmec = 0.0
-         sinmu_vmec = 0.0
-         sinnv_vmec = 0.0
          cosmu = 0.0
          cosnv = 0.0
          sinmu = 0.0
@@ -1223,8 +1266,6 @@
 !$OMP& SCHEDULE(STATIC)
       DO i = parallel%start(num_u), parallel%end(num_u)
          x = (i - 0.5)*du
-         cosmu_vmec(:,i) = COS(xm*x)
-         sinmu_vmec(:,i) = SIN(xm*x)
 
          DO m = 0, siesta%mpol
             cosmu(m,i) = COS(m*x)
@@ -1239,11 +1280,10 @@
          x = (i - 0.5)*primed_grid_construct_siesta%dv
          cosv(i) = COS(x)
          sinv(i) = SIN(x)
-         cosnv_vmec(:,i) = COS(xn*x)
-         sinnv_vmec(:,i) = SIN(xn*x)
+
          DO n = -siesta%ntor, siesta%ntor
-            cosnv(n,i) = COS(n*x)
-            sinnv(n,i) = SIN(n*x)
+            cosnv(n,i) = COS(siesta%tor_modes(n)*x)
+            sinnv(n,i) = SIN(siesta%tor_modes(n)*x)
          END DO
       END DO
 !$OMP END DO
@@ -1252,10 +1292,6 @@
 !$OMP SINGLE
          CALL parallel%reduce(cosv)
          CALL parallel%reduce(sinv)
-         CALL parallel%reduce(cosmu_vmec)
-         CALL parallel%reduce(sinmu_vmec)
-         CALL parallel%reduce(cosnv_vmec)
-         CALL parallel%reduce(sinnv_vmec)
          CALL parallel%reduce(cosmu)
          CALL parallel%reduce(sinmu)
          CALL parallel%reduce(cosnv)
@@ -1266,27 +1302,20 @@
       ALLOCATE(cosmn(0:siesta%mpol,-siesta%ntor:siesta%ntor))
       ALLOCATE(sinmn(0:siesta%mpol,-siesta%ntor:siesta%ntor))
 
-      ALLOCATE(cosmn_vmec(mnmax))
-      ALLOCATE(sinmn_vmec(mnmax))
-
-      ALLOCATE(amnint(mnmax))
-
+      ALLOCATE(amnint(0:siesta%mpol,-siesta%ntor:siesta%ntor))
 !$OMP DO
 !$OMP& SCHEDULE(STATIC)
       DO i = parallel%start(siesta%nrad*num_u*num_v_use),                      &
      &       parallel%end(siesta%nrad*num_u*num_v_use)
          si = bmw_parallel_context_i(i, siesta%nrad)
          ui = bmw_parallel_context_j(i, siesta%nrad, num_u)
-         vi = bmw_parallel_context_k(i, siesta%nrad, num_u)
+         vi = bmw_parallel_context_k(i, siesta%nrad, num_v_use)
 
-         x = (si - 1.0)/(siesta%nrad - 1.0)
+         ru = 0.0
+         rv = 0.0
 
-         CALL primed_grid_siesta_interpol(x, ilow, wlow, ihigh, whigh)
-
-         cosmn_vmec = cosmu_vmec(:,ui)*cosnv_vmec(:,vi)                        &
-     &              + sinmu_vmec(:,ui)*sinnv_vmec(:,vi)
-         sinmn_vmec = sinmu_vmec(:,ui)*cosnv_vmec(:,vi)                        &
-     &              - cosmu_vmec(:,ui)*sinnv_vmec(:,vi)
+         zu = 0.0
+         zv = 0.0
 
          DO n = -siesta%ntor, siesta%ntor
             DO m = 0, siesta%mpol
@@ -1294,46 +1323,92 @@
      &                    - sinmu(m, ui)*sinnv(n, vi)
                sinmn(m,n) = sinmu(m, ui)*cosnv(n, vi)                          &
      &                    + cosmu(m, ui)*sinnv(n, vi)
+
+               ru = ru - m*siesta%rmncf(m, n, si)*sinmn(m,n)
+               rv = rv                                                         &
+     &            + siesta%tor_modes(n)*siesta%rmncf(m,n,si)*sinmn(m,n)
+
+               zu = zu + m*siesta%zmnsf(m, n, si)*cosmn(m,n)
+               zv = zv                                                         &
+     &            - siesta%tor_modes(n)*siesta%zmnsf(m,n,si)*cosmn(m,n)
             END DO
          END DO
 
-         amnint = wlow*rmnc(:,ilow) + whigh*rmnc(:,ihigh)
-         r = SUM(amnint*cosmn_vmec)
-         ru = -SUM(xm*amnint*sinmn_vmec)
-         rv =  SUM(xn*amnint*sinmn_vmec)
+         r = SUM(siesta%rmncf(:,:,si)*cosmn)
+         z = SUM(siesta%zmnsf(:,:,si)*sinmn)
 
-         amnint = wlow*zmns(:,ilow) + whigh*zmns(:,ihigh)
-         z = SUM(amnint*sinmn_vmec)
-         zu =  SUM(xm*amnint*cosmn_vmec)
-         zv = -SUM(xn*amnint*cosmn_vmec)
+         IF (si .eq. 1) THEN
+            amnint = 0
+            amnint(0,:) = 0
+            amnint(1,:) = siesta%rmncf(1,:,1)/ds
+         ELSE IF (si .eq. siesta%nrad) THEN
+            amnint = (siesta%rmncf(:,:,siesta%nrad) -                          &
+     &                siesta%rmncf(:,:,siesta%nrad-1))/ds
+         ELSE
+            amnint = (siesta%rmncf(:,:,si+1) -                                 &
+     &                siesta%rmncf(:,:,si-1))/(2.0*ds)
+         ENDIF
+         rs = SUM(amnint*cosmn)
 
-         amnint = 2.0*x*(rmnc(:,ihigh) - rmnc(:,ilow))*(ns - 1.0)
-         rs = SUM(amnint*cosmn_vmec)
-
-         amnint = 2.0*x*(zmns(:,ihigh) - zmns(:,ilow))*(ns - 1.0)
-         zs = SUM(amnint*sinmn_vmec)
+         IF (si .eq. 1) THEN
+            amnint = 0
+            amnint(0,:) = 0
+            amnint(1,:) = siesta%zmnsf(1,:,1)/ds
+         ELSE IF (si .eq. siesta%nrad) THEN
+            amnint = (siesta%zmnsf(:,:,siesta%nrad) -                          &
+     &                siesta%zmnsf(:,:,siesta%nrad-1))/ds
+         ELSE
+            amnint = (siesta%zmnsf(:,:,si+1) -                                 &
+     &                siesta%zmnsf(:,:,si-1))/(2.0*ds)
+         ENDIF
+         zs = SUM(amnint*sinmn)
 
          js = SUM(siesta%jksupsmnsf(:,:,si)*sinmn)
          ju = SUM(siesta%jksupumncf(:,:,si)*cosmn)
          jv = SUM(siesta%jksupvmncf(:,:,si)*cosmn)
          IF (BTEST(siesta%flags, siesta_lasym_flag)) THEN
-            IF (lasym) THEN
-               amnint = wlow*rmns(:,ilow) + whigh*rmns(:,ihigh)
-               r = r + SUM(amnint*sinmn_vmec)
-               ru = ru + SUM(xm*amnint*cosmn_vmec)
-               rv = rv - SUM(xn*amnint*cosmn_vmec)
+            DO n = -siesta%ntor, siesta%ntor
+               DO m = 0, siesta%mpol
+                  ru = ru + m*siesta%rmnsf(m, n, si)*cosmn(m,n)
+                  rv = rv                                                      &
+     &               - siesta%tor_modes(n)*siesta%rmnsf(m,n,si) *              &
+     &                 cosmn(m,n)
 
-               amnint = wlow*zmnc(:,ilow) + whigh*zmnc(:,ihigh)
-               z = z + SUM(amnint*cosmn_vmec)
-               zu = zu - SUM(xm*amnint*sinmn_vmec)
-               zv = zv + SUM(xn*amnint*sinmn_vmec)
+                  zu = zu - m*siesta%zmncf(m, n, si)*sinmn(m,n)
+                  zv = zv                                                      &
+     &               + siesta%tor_modes(n)*siesta%zmncf(m,n,si) *              &
+     &                 sinmn(m,n)
+               END DO
+            END DO
 
-               amnint = 2.0*x*(rmns(:,ihigh) - rmns(:,ilow))*(ns - 1.0)
-               rs = rs + SUM(amnint*sinmn_vmec)
+            r = r + SUM(siesta%rmnsf(:,:,si)*sinmn)
+            z = z + SUM(siesta%zmncf(:,:,si)*cosmn)
 
-               amnint = 2.0*x*(zmnc(:,ihigh) - zmnc(:,ilow))*(ns - 1.0)
-               zs = zs + SUM(amnint*cosmn_vmec)
-            END IF
+            IF (si .eq. 1) THEN
+               amnint = 0
+               amnint(0,:) = 0
+               amnint(1,:) = siesta%rmnsf(1,:,1)/ds
+            ELSE IF (si .eq. siesta%nrad) THEN
+               amnint = (siesta%rmnsf(:,:,siesta%nrad) -                       &
+     &                   siesta%rmnsf(:,:,siesta%nrad-1))/ds
+            ELSE
+               amnint = (siesta%rmnsf(:,:,si+1) -                              &
+     &                   siesta%rmnsf(:,:,si-1))/(2.0*ds)
+            ENDIF
+            rs = rs + SUM(amnint*sinmn)
+
+            IF (si .eq. 1) THEN
+               amnint = 0
+               amnint(0,:) = 0
+               amnint(1,:) = siesta%zmncf(1,:,1)/ds
+            ELSE IF (si .eq. siesta%nrad) THEN
+               amnint = (siesta%zmncf(:,:,siesta%nrad) -                       &
+     &                   siesta%zmncf(:,:,siesta%nrad-1))/ds
+            ELSE
+               amnint = (siesta%zmncf(:,:,si+1) -                              &
+     &                   siesta%zmncf(:,:,si-1))/(2.0*ds)
+            ENDIF
+            zs = zs + SUM(amnint*cosmn)
 
             js = js + SUM(siesta%jksupsmncf(:,:,si)*cosmn)
             ju = ju + SUM(siesta%jksupumnsf(:,:,si)*sinmn)
@@ -1349,7 +1424,7 @@
          jp = jv*r
          jz = js*zs + ju*zu + jv*zv
 
-         IF (si .eq. 1 .or. si .eq. ns) THEN
+         IF (si .eq. 1 .or. si .eq. siesta%nrad) THEN
             jr = jr/2.0
             jp = jp/2.0
             jz = jz/2.0
@@ -1370,18 +1445,11 @@
       DEALLOCATE(cosmn)
       DEALLOCATE(sinmn)
 
-      DEALLOCATE(cosmn_vmec)
-      DEALLOCATE(sinmn_vmec)
-
       DEALLOCATE(amnint)
 !$OMP END PARALLEL
 
       DEALLOCATE(cosv)
       DEALLOCATE(sinv)
-      DEALLOCATE(cosmu_vmec)
-      DEALLOCATE(sinmu_vmec)
-      DEALLOCATE(cosnv_vmec)
-      DEALLOCATE(sinnv_vmec)
       DEALLOCATE(cosmu)
       DEALLOCATE(sinmu)
       DEALLOCATE(cosnv)
@@ -1452,40 +1520,6 @@
          DEALLOCATE(this%j_z)
          this%j_z => null()
       END IF
-
-      END SUBROUTINE
-
-!*******************************************************************************
-!  UTILITY SUBROUTINES
-!*******************************************************************************
-      SUBROUTINE primed_grid_siesta_interpol(s, ilow, wlow,                    &
-     &                                       ihigh, whigh)
-      USE read_wout_mod, ONLY: ns
-
-      IMPLICIT NONE
-
-!  Declare Arguments
-      REAL (rprec), INTENT(in)  :: s
-      INTEGER, INTENT(out)      :: ilow
-      REAL (rprec), INTENT(out) :: wlow
-      INTEGER, INTENT(out)      :: ihigh
-      REAL (rprec), INTENT(out) :: whigh
-
-!  local variables
-      REAL (rprec)              :: start_time
-      REAL (rprec)              :: wlow_r
-
-!  Start of executable code
-      start_time = profiler_get_start_time()
-
-      wlow_r = s*s*(ns - 1.0) + 1.0
-      ilow = FLOOR(wlow_r)
-      IF (ilow .eq. ns) THEN
-         ilow = ns - 1
-      END IF
-      ihigh = ilow + 1
-      wlow = -wlow_r + 1.0 + ilow
-      whigh = 1.0 - wlow
 
       END SUBROUTINE
 
