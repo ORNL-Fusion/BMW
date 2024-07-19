@@ -101,6 +101,10 @@
          flags = IBCLR(flags, bmw_state_flags_ju)
          flags = IBCLR(flags, bmw_state_flags_jv)
       END IF
+      IF (cl_parser%is_flag_set('-wvacf')) THEN
+         flags = IBSET(flags, bmw_state_flags_correct)
+         flags = IBCLR(flags, bmw_state_flags_siesta)
+      END IF
 
       flags = IBSET(flags, bmw_state_flags_mgrid)
       num_p = 0
@@ -121,13 +125,11 @@
       IF (cl_parser%is_flag_set('-mgridf')) THEN
          context => bmw_context_class(cl_parser%get('-mgridf'),                &
      &                                cl_parser%get('-woutf'),                 &
-     &                                cl_parser%get('-wvacf'),                 &
      &                                cl_parser%get('-siestaf'),               &
      &                                flags, num_p, parallel, io_unit)
       ELSE
          num_p = cl_parser%get('-num_p', 1)
          context => bmw_context_class(cl_parser%get('-woutf'),                 &
-     &                                cl_parser%get('-wvacf'),                 &
      &                                cl_parser%get('-siestaf'), flags,        &
      &                                cl_parser%get('-num_r', 1), num_p,       &
      &                                cl_parser%get('-num_z', 1),              &
@@ -137,9 +139,17 @@
      &                                cl_parser%get('-zmin', 0.0_dp),          &
      &                                parallel, io_unit)
       END IF
-      CALL context%set_up_grid(cl_parser%get('-p_start', -1),                  &
-     &                         cl_parser%get('-p_end', -1),                    &
-     &                         parallel, io_unit)
+      IF (cl_parser%is_flag_set('-wvacf')) THEN
+         CALL context%set_up_grid(cl_parser%get('-wvacf'),                     &
+     &                            num_p*context%m_grid%nfp, flags,             &
+     &                            cl_parser%get('-p_start', -1),               &
+     &                            cl_parser%get('-p_end', -1),                 &
+     &                            parallel, io_unit)
+      ELSE
+         CALL context%set_up_grid(cl_parser%get('-p_start', -1),               &
+     &                            cl_parser%get('-p_end', -1),                 &
+     &                            parallel, io_unit)
+      END IF
       CALL context%write(cl_parser%get('-outf'), parallel)
 
       DEALLOCATE(context)
