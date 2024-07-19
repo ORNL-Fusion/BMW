@@ -54,15 +54,15 @@
 !>  Interface for the bmw_commandline_parser constructor.
 !-------------------------------------------------------------------------------
       INTERFACE primed_grid_class
-         MODULE PROCEDURE primed_grid_construct_no_vac,                        &
-     &                    primed_grid_construct
+         MODULE PROCEDURE primed_grid_construct,                               &
+     &                    primed_grid_construct_no_vac
       END INTERFACE
 
       CONTAINS
 !*******************************************************************************
 !  CONSTRUCTION SUBROUTINES
 !*******************************************************************************
-! FIXME: This is a temp constructor until the surface code can be updated.
+! FIXME: Temp constructor to remove the vaccum vmec argument.
 !-------------------------------------------------------------------------------
 !>  @brief Construct a @ref primed_grid_class object.
 !>
@@ -71,16 +71,17 @@
 !>
 !>  @param[in] num_v            Number of toroidal grid points.
 !>  @param[in] flags            Number of toroidal grid points.
+!>  @param[in] vmec             VMEC file object.
 !>  @param[in] siesta_file_name Name of the siesta restart file.
 !>  @param[in] parallel         @ref bmw_parallel_context_class object instance.
 !>  @param[in] io_unit          Unit number to write messages to.
 !>  @returns A pointer to a constructed @ref primed_grid_class object.
 !-------------------------------------------------------------------------------
-      FUNCTION primed_grid_construct_no_vac(num_v, flags,                      &
-     &                                      siesta_file_name,                  &
-     &                                      parallel, io_unit)
+      FUNCTION primed_grid_construct_no_vac(num_v, flags, vmec,                &
+     &                                      siesta_file_name, parallel,        &
+     &                                      io_unit)
+      USE bmw_state_flags
       USE vmec_file
-      USE read_wout_mod, ONLY: read_wout_file
 
       IMPLICIT NONE
 
@@ -88,24 +89,24 @@
       TYPE (primed_grid_class), POINTER :: primed_grid_construct_no_vac
       INTEGER, INTENT(in)                           :: num_v
       INTEGER, INTENT(in)                           :: flags
+      CLASS (vmec_file_class), POINTER, INTENT(in)  :: vmec
       CHARACTER (len=*), INTENT(in)                 :: siesta_file_name
       TYPE (bmw_parallel_context_class), INTENT(in) :: parallel
       INTEGER, INTENT(in)                           :: io_unit
 
 !  local variables
       REAL (rprec)                                  :: start_time
-      CLASS (vmec_file_class), POINTER              :: vmec
 
 !  Start of executable code
       start_time = profiler_get_start_time()
 
-      vmec => vmec_file_class('')
       primed_grid_construct_no_vac =>                                          &
-     &   primed_grid_construct(num_v, flags, vmec, '',                         &
-     &                         siesta_file_name, parallel, io_unit)
+     &   primed_grid_construct(num_v, flags, vmec, '', siesta_file_name,       &
+     &                         parallel, io_unit)
 
       CALL profiler_set_stop_time('primed_grid_construct_no_vac',              &
      &                            start_time)
+
       END FUNCTION
 
 !-------------------------------------------------------------------------------

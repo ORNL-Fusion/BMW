@@ -35,5 +35,7 @@
       INTEGER, PARAMETER :: bmw_state_flags_siesta = 3
 !>  Bit position for mgrid specified number of phi planes.
       INTEGER, PARAMETER :: bmw_state_flags_mgrid = 4
+!>  Bit position for vmec vacuum correction.
+      INTEGER, PARAMETER :: bmw_state_flags_correct = 5
 
       END MODULE
