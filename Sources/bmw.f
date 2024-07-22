@@ -69,11 +69,6 @@
 
       cl_parser => bmw_commandline_parser_class(parallel)
 
-!  Check if the required flags are set.
-!      IF (.not.cl_parser%is_flag_set('-mgridf')) THEN
-!         WRITE (*,1001) '-mgridf'
-!         CALL bmw_commandline_parser_print_help
-!      END IF
       IF (.not.cl_parser%is_flag_set('-woutf')) THEN
          WRITE (*,1001) '-woutf'
          CALL bmw_commandline_parser_print_help
