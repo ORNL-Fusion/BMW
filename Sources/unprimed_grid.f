@@ -668,7 +668,7 @@
 
 !$OMP PARALLEL
 !$OMP& DEFAULT(SHARED)
-!$OMP& PRIVATE(i, ri, zi, vi, x, y, ax, ay, rp, k_p, k_m,                      &
+!$OMP& PRIVATE(i, ri, zi, vi, x, y, ax, ay, rp, rp_vac, k_p, k_m,              &
 !$OMP&         ar_p, ar_m, ap_p, ap_m, az_p, az_m, current)
 
 !  Multi process will do an all reduce so these arrays need to be initalized.
