@@ -540,7 +540,7 @@
       WRITE(*,*) '                                                     '
       WRITE(*,*) '  -woutf   Y Specify the wout file name.             '
       WRITE(*,*) '                                                     '
-      WRITE(*,*) '  -woutf   Y Specify the wout file name.             '
+      WRITE(*,*) '  -wvacf   Y Specify the vacume wout file name.      '
       WRITE(*,*) '                                                     '
       WRITE(*,*) '  -siestaf Y Specify the siesta restart file name.   '
       WRITE(*,*) '             When this flag is used, plasma currents '

@@ -151,19 +151,19 @@
       ALLOCATE(vmec_file_construct%presf(vmec_file_construct%ns))
 
       ALLOCATE(vmec_file_construct%rmncf(                                      &
-     &   vmec_file_construct%ns, vmec_file_construct%mnmax))
+     &   vmec_file_construct%mnmax, vmec_file_construct%ns))
       ALLOCATE(vmec_file_construct%zmnsf(                                      &
-     &   vmec_file_construct%ns, vmec_file_construct%mnmax))
+     &   vmec_file_construct%mnmax, vmec_file_construct%ns))
 
       ALLOCATE(vmec_file_construct%bsupumnch(                                  &
-     &   vmec_file_construct%ns, vmec_file_construct%mnmax_nyq))
+     &   vmec_file_construct%mnmax_nyq, vmec_file_construct%ns))
       ALLOCATE(vmec_file_construct%bsupvmnch(                                  &
-     &   vmec_file_construct%ns, vmec_file_construct%mnmax_nyq))
+     &   vmec_file_construct%mnmax_nyq, vmec_file_construct%ns))
 
       ALLOCATE(vmec_file_construct%jksupumncf(                                 &
-     &   vmec_file_construct%ns, vmec_file_construct%mnmax_nyq))
+     &   vmec_file_construct%mnmax_nyq, vmec_file_construct%ns))
       ALLOCATE(vmec_file_construct%jksupvmncf(                                 &
-     &   vmec_file_construct%ns, vmec_file_construct%mnmax_nyq))
+     &   vmec_file_construct%mnmax_nyq, vmec_file_construct%ns))
 
       CALL cdf_read(vmec_ncid, 'xm', vmec_file_construct%xm)
       CALL cdf_read(vmec_ncid, 'xn', vmec_file_construct%xn)
@@ -190,19 +190,19 @@
 
       IF (vmec_file_construct%lasym) THEN
          ALLOCATE(vmec_file_construct%rmnsf(                                   &
-     &      vmec_file_construct%ns, vmec_file_construct%mnmax))
+     &      vmec_file_construct%mnmax, vmec_file_construct%ns))
          ALLOCATE(vmec_file_construct%zmncf(                                   &
-     &      vmec_file_construct%ns, vmec_file_construct%mnmax))
+     &      vmec_file_construct%mnmax, vmec_file_construct%ns))
 
          ALLOCATE(vmec_file_construct%bsupumnsh(                               &
-     &      vmec_file_construct%ns, vmec_file_construct%mnmax_nyq))
+     &      vmec_file_construct%mnmax_nyq, vmec_file_construct%ns))
          ALLOCATE(vmec_file_construct%bsupvmnsh(                               &
-     &      vmec_file_construct%ns, vmec_file_construct%mnmax_nyq))
+     &      vmec_file_construct%mnmax_nyq, vmec_file_construct%ns))
 
          ALLOCATE(vmec_file_construct%jksupumnsf(                              &
-     &      vmec_file_construct%ns, vmec_file_construct%mnmax_nyq))
+     &      vmec_file_construct%mnmax_nyq, vmec_file_construct%ns))
          ALLOCATE(vmec_file_construct%jksupvmnsf(                              &
-     &      vmec_file_construct%ns, vmec_file_construct%mnmax_nyq))
+     &      vmec_file_construct%mnmax_nyq, vmec_file_construct%ns))
 
          CALL cdf_read(vmec_ncid, 'rmns', vmec_file_construct%rmnsf)
          CALL cdf_read(vmec_ncid, 'zmnc', vmec_file_construct%zmncf)
