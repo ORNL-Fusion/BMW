@@ -25,3 +25,9 @@ target_link_libraries (xbmw PUBLIC bmw)
 add_subdirectory (Sources)
 
 install (TARGETS xbmw)
+
+################################################################################
+#  Testing                                                                     #
+################################################################################
+
+add_subdirectory (Testing)
