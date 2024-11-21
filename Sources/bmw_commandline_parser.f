@@ -116,6 +116,8 @@
      &      is_flag_set => bmw_commandline_parser_is_flag_set
          PROCEDURE, PASS :: flag_requires_value =>                             &
      &      bmw_commandline_parser_flag_requires_value
+         PROCEDURE, PASS ::                                                    &
+     &      check_arg => bmw_commandline_parser_check_arg
          FINAL           :: bmw_commandline_parser_destruct
       END TYPE
 
@@ -197,23 +199,28 @@
                   CALL bmw_commandline_parser_print_help
                END IF
 
-               bmw_commandline_parser_construct%arg(i) = TRIM(temp)
+               bmw_commandline_parser_construct%arg(i) =                       &
+     &            TRIM(bmw_commandline_parser_construct%check_arg(temp))
                bmw_commandline_parser_construct%value(i) = ''
             ELSE
                bmw_commandline_parser_construct%arg(i) =                       &
-     &            temp(1:value_index - 1)
+     &            TRIM(bmw_commandline_parser_construct%check_arg(             &
+     &                    temp(1:value_index - 1)))
                bmw_commandline_parser_construct%value(i) =                     &
      &            temp(value_index + 1:LEN_TRIM(temp))
             END IF
-          END IF
+         ELSE
+            WRITE (*,1000) temp
+         END IF
 
-          CALL bmw_commandline_parser_flag_requires_value(                     &
+         CALL bmw_commandline_parser_flag_requires_value(                     &
      &            bmw_commandline_parser_construct, i)
       END DO
 
       CALL profiler_set_stop_time('bmw_commandline_parser_construct',          &
      &                            start_time)
 
+1000  FORMAT('Invalid commandline argument: ',a)
       END FUNCTION
 
 !*******************************************************************************
@@ -510,6 +517,73 @@
 1000  FORMAT(a,' flag requires value. Usage: ',a,'=value')
 
       END SUBROUTINE
+
+!-------------------------------------------------------------------------------
+!>  @brief Check if a command line argument is valid.
+!>
+!>  Valid commands are
+!>
+!>    * -h
+!>    * -mgridf
+!>    * -woutf
+!>    * -wvacf
+!>    * -siestaf
+!>    * -outf
+!>    * -logf
+!>    * -jv
+!>    * -ju
+!>    * -p_start
+!>    * -p_end
+!>    * -para
+!>    * -force
+!>    * -num_r
+!>    * -num_p
+!>    * -num_z
+!>    * -rmax
+!>    * -rmin
+!>    * -zmax
+!>    * -zmin
+!>
+!>  @param[in] this A @ref bmw_commandline_parser_class instance.
+!>  @param[in] arg  A command line argument to check.
+!>  @returns The argument if it's valid.
+!-------------------------------------------------------------------------------
+      FUNCTION bmw_commandline_parser_check_arg(this, arg)
+
+      IMPLICIT NONE
+
+!  Declare Arguments
+      CHARACTER (len=path_length) :: bmw_commandline_parser_check_arg
+      CLASS (bmw_commandline_parser_class), INTENT(in) :: this
+      CHARACTER (len=*), INTENT(in)                    :: arg
+
+!  Local arguments
+      INTEGER                                          :: i
+      REAL (rprec)                                     :: start_time
+
+!  Start of executable code
+      start_time = profiler_get_start_time()
+
+      SELECT CASE (TRIM(arg))
+
+         CASE ('-h','-mgridf','-woutf','-wvacf','-siestaf','-outf',            &
+     &         '-logf','-jv','-ju','-p_start','-p_end','-para',                &
+     &         '-force','-num_r','-num_p','-num_z','-rmax','-rmin',            &
+     &         '-zmax','-zmin')
+            bmw_commandline_parser_check_arg = arg
+
+         CASE DEFAULT
+            WRITE (*,1000) TRIM(arg)
+            CALL bmw_commandline_parser_print_help
+
+      END SELECT
+
+      CALL profiler_set_stop_time('bmw_commandline_parser_check_arg',          &
+     &                            start_time)
+
+1000  FORMAT('Invalid commandline argument: ',a)
+
+      END FUNCTION
 
 !-------------------------------------------------------------------------------
 !>  @brief Print out help text.
