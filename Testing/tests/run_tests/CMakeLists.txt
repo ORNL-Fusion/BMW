@@ -22,7 +22,7 @@ set_tests_properties (bmw_vmec_test
                       PROCESSORS $<TARGET_PROPERTY:stell,MPIEXEC_MAX_NUMPROCS>)
 
 add_test (NAME    bmw_test
-          COMMAND $<TARGET_PROPERTY:bmw,BINARY_DIR>/xbmw -mgrid=mgrid_test.nc -woutf=wout_test.vmec.nc -outf=result.nc -para=-1)
+          COMMAND $<TARGET_PROPERTY:bmw,BINARY_DIR>/xbmw -mgridf=mgrid_test.nc -woutf=wout_test.vmec.nc -outf=result.nc -para=-1)
 set_tests_properties (bmw_test
                       PROPERTIES
                       DEPENDS bmw_vmec_test
