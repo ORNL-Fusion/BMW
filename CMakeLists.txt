@@ -5,6 +5,7 @@ project (bmw C Fortran)
 find_package (OpenMP)
 
 add_library (bmw STATIC)
+add_dependencies (bmw pull_bmw)
 
 target_link_libraries (bmw
 
