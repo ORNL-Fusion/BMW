@@ -1,5 +1,7 @@
 # BMW
 Biot-Savart Magnetic Vmec Vector potential.
-
-## Building
-This is a subproject of the [Stellarator-Tools](https://github.com/ORNL-Fusion/Stellarator-Tools) suite of codes. To build the code follow the instructions in the [Stellarator-Tools](https://github.com/ORNL-Fusion/Stellarator-Tools) repository.
+This repository is part of the 
+[Stellarator-Tools](https://github.com/ORNL-Fusion/Stellarator-Tools.git) suite 
+of codes. To build this code, clone the 
+[Stellarator-Tools](https://github.com/ORNL-Fusion/Stellarator-Tools.git) 
+repository and enable the BMW project.
